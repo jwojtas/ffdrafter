@@ -5,7 +5,7 @@ export async function handler(event, context) {
 
     const results = await Promise.all(
       positions.map(async (pos) => {
-        const url = `https://fantasyfootballcalculator.com/api/v1/adp/standard?position=${pos}&teams=12&year=2025&count=100`;
+        const url = `https://fantasyfootballcalculator.com/api/v1/adp/standard?position=${pos}&teams=12&year=2025&count=400`;
         const res = await fetch(url);
         if (!res.ok) return [];
         const data = await res.json();
