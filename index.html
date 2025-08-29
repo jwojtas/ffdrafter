@@ -106,17 +106,23 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/.netlify/functions/adp");
-      if (!res.ok) throw new Error("Failed to fetch ADP");
-      const data = await res.json();
+      const res = await fetch("/.netlify/functions/adp"); // your existing endpoint
+if (!res.ok) throw new Error("Failed to fetch ADP");
+const data = await res.json();
 
-      const mapped = data.players.map(p => ({
-        name: p.player_name || p.name,
-        pos: normalizePos(p.position || p.pos),
-        adp: p.adp,
-        drafted: false
-      }));
-      setPlayers(mapped);
+// Normalize position mapping function (assumed defined above):
+// const normalizePos = pos => { ... };
+
+const mapped = (data.players || [])
+  .slice(0, 400) // take only the top 400 players
+  .map(p => ({
+    name: p.player_name || p.name,
+    pos: normalizePos(p.position || p.pos),
+    adp: p.adp,
+    drafted: false
+  }));
+
+setPlayers(mapped);
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
