@@ -140,56 +140,59 @@ function App() {
   };
 
   const makePick = (manualPlayer = null) => {
-    if (currentPickIndex >= draftOrder.length) return;
-    const pickTeamIndex = draftOrder[currentPickIndex];
-    const team = teams[pickTeamIndex];
-    const round = Math.floor(currentPickIndex / numTeams) + 1;
+  if (currentPickIndex >= draftOrder.length) return;
+  const pickTeamIndex = draftOrder[currentPickIndex];
+  const team = teams[pickTeamIndex];
 
-    let pick = manualPlayer;
+  let pick = manualPlayer;
 
+  if (!pick) {
+    const teamNeeds = {};
+    for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
+      teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
+    }
+
+    const teamPicksMade = Object.values(team.roster).flat().length;
+    const teamPicksLeft = 16 - teamPicksMade;
+
+    const needsDST = (team.roster.DST?.length || 0) === 0;
+    const needsK   = (team.roster.K?.length   || 0) === 0;
+
+    // 🔒 FORCE logic: if they won't have enough picks left, draft K/DST now
+    if (needsDST && teamPicksLeft <= (needsK ? 2 : 1)) {
+      pick = players.find(p => !p.drafted && normalizePos(p.pos) === "DST");
+    }
+    if (!pick && needsK && teamPicksLeft <= (needsDST ? 2 : 1)) {
+      pick = players.find(p => !p.drafted && normalizePos(p.pos) === "K");
+    }
+
+    // Normal suggestion if no forced pick
     if (!pick) {
-      const teamNeeds = {};
-      for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
-        teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
-      }
-
-      // Guarantee DST and K by final 2 picks
-      const teamPicksMade = Object.values(team.roster).flat().length;
-      const teamPicksLeft = 16 - teamPicksMade;
-
-      if (!pick && (team.roster.K?.length || 0) === 0 && teamPicksLeft <= 2) {
-        pick = players.find(p => !p.drafted && normalizePos(p.pos) === "K");
-      }
-      if (!pick && (team.roster.DST?.length || 0) === 0 && teamPicksLeft <= 2) {
-        pick = players.find(p => !p.drafted && normalizePos(p.pos) === "DST");
-      }
-
-      if (!pick) {
-        pick = suggestPick(players, teamNeeds);
-      }
+      pick = suggestPick(players, teamNeeds);
     }
+  }
 
-    if (!pick) return;
-    pick.drafted = true;
+  if (!pick) return;
+  pick.drafted = true;
 
-    const pos = normalizePos(pick.pos);
-    if (!team.roster[pos]) team.roster[pos] = [];
+  const pos = normalizePos(pick.pos);
+  if (!team.roster[pos]) team.roster[pos] = [];
 
-    if (team.roster[pos].length < (startersRequired[pos] || 0)) {
-      team.roster[pos].push(pick);
-    } else if (["RB", "WR", "TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
-      team.roster.FLEX.push(pick);
-    } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
-      team.roster[pos].push(pick);
-    } else {
-      team.roster.BE.push(pick);
-    }
+  if (team.roster[pos].length < (startersRequired[pos] || 0)) {
+    team.roster[pos].push(pick);
+  } else if (["RB","WR","TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
+    team.roster.FLEX.push(pick);
+  } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
+    team.roster[pos].push(pick);
+  } else {
+    team.roster.BE.push(pick);
+  }
 
-    const updatedTeams = [...teams];
-    updatedTeams[pickTeamIndex] = team;
-    setTeams(updatedTeams);
-    setCurrentPickIndex(currentPickIndex + 1);
-  };
+  const updatedTeams = [...teams];
+  updatedTeams[pickTeamIndex] = team;
+  setTeams(updatedTeams);
+  setCurrentPickIndex(currentPickIndex + 1);
+};
 
   const currentTeamIndex = draftOrder[currentPickIndex];
   const currentTeam = currentTeamIndex!=null?teams[currentTeamIndex]:null;
