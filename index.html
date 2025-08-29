@@ -106,8 +106,9 @@ function App() {
     setError("");
     try {
       const res = await fetch("/.netlify/functions/adp");
-      if (!res.ok) throw new Error("Failed to fetch ADP");
-      const data = await res.json();
+if (!res.ok) throw new Error("Failed to fetch ADP");
+const data = await res.json();
+console.log("ADP API returned:", data);
 
       const mapped = (data.players || [])
   .map(p => ({
