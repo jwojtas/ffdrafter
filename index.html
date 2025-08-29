@@ -13,9 +13,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-
 const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Team 7","Team 8"];
-
 const startersRequired = { QB:1,RB:2,WR:2,TE:1,FLEX:1,DST:1,K:1 };
 const maxPlayers = { QB:4,RB:8,WR:8,TE:3,FLEX:1,DST:3,K:3,BE:7 };
 
@@ -105,8 +103,7 @@ function App(){
       if(teamNeeds.FLEX>0){team.roster.FLEX.push(pick);}
       else if(team.roster.BE.length<maxPlayers.BE){team.roster.BE.push(pick);}
     } else if(team.roster.BE.length<maxPlayers.BE){
-      team.roster.BE.push(pick);
-    }
+      team.roster.BE.push(pick);}
     const updatedTeams=[...teams];
     updatedTeams[pickTeamIndex]=team;
     setTeams(updatedTeams);
@@ -125,6 +122,7 @@ function App(){
   const draftComplete=currentPickIndex>=draftOrder.length;
 
   const gradeTeam=(team)=>{
+    if(!team || !team.roster) return 0; // <-- Guard against undefined
     const totalADP=Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
     const posScore=Object.entries(team.roster).reduce((sum,[pos,arr])=>{
       let req=startersRequired[pos]||0;
@@ -169,8 +167,8 @@ function App(){
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {teams.map((team,i)=>(
             <div key={i} className={`bg-white p-4 rounded-xl shadow ${i===userPickPosition?'border-2 border-blue-500':''}`}>
-              <h3 className="font-bold mb-2">{team.name}</h3>
-              {Object.entries(team.roster).map(([pos,arr])=>{
+              <h3 className="font-bold mb-2">{team?.name || `Team ${i+1}`}</h3>
+              {Object.entries(team?.roster||{}).map(([pos,arr])=>{
                 const isFLEX=pos==='FLEX';
                 return <p key={pos} className={isFLEX?'text-green-600 font-semibold':''}><strong>{pos}:</strong> {arr.map(p=>p.name).join(", ")}</p>
               })}
@@ -179,14 +177,14 @@ function App(){
         </div>
       )}
 
-      {draftComplete&&(
+      {draftComplete && teams[userPickPosition] && (
         <div className="bg-green-100 p-4 rounded-xl">
           <h2 className="text-xl font-bold mb-2">Draft Complete!</h2>
           <p>Your Team Grade: {gradeTeam(teams[userPickPosition])} / 100</p>
           <p>Grades for Other Teams:</p>
           <ul>
             {teams.map((t,i)=>(
-              <li key={i}>{t.name}: {gradeTeam(t)}{i===userPickPosition?' (You)':''}</li>
+              <li key={i}>{t?.name || `Team ${i+1}`}: {gradeTeam(t)}{i===userPickPosition?' (You)':''}</li>
             ))}
           </ul>
         </div>
@@ -198,21 +196,5 @@ function App(){
           <ol className="list-decimal list-inside max-h-64 overflow-auto">
             {draftOrder.slice(0,currentPickIndex).map((tIndex,idx)=>{
               const t=teams[tIndex];
-              const pick=Object.values(t.roster).flat().slice(-1)[0];
-              const isFLEX=Object.entries(t.roster).some(([pos,arr])=>arr.includes(pick) && pos==='FLEX');
-              return (
-                <li key={idx} className={`${tIndex===userPickPosition?'font-bold text-blue-600':''} ${isFLEX?'text-green-600 font-semibold':''}`}>
-                  {t.name}: {pick?pick.name+` (${pick.pos})`:'No pick'}
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+              const pick=Object.values(t?.roster||{}).flat().slice(-1)[0];
+              const isFLEX=Object.entries(t?.roster
