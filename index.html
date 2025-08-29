@@ -131,58 +131,66 @@ setPlayers(mapped);
   };
 
   const makePick = (manualPlayer = null) => {
-    if (currentPickIndex >= draftOrder.length) return;
-    const pickTeamIndex = draftOrder[currentPickIndex];
-    const team = teams[pickTeamIndex];
-    const round = Math.floor(currentPickIndex / numTeams) + 1;
+  if (currentPickIndex >= draftOrder.length) return;
+  const pickTeamIndex = draftOrder[currentPickIndex];
+  const team = teams[pickTeamIndex];
+  const round = Math.floor(currentPickIndex / numTeams) + 1;
 
-    let pick = manualPlayer;
+  let pick = manualPlayer;
+
+  if (!pick) {
+    const teamNeeds = {};
+    for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
+      teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
+    }
+
+    // force K/DST late if missing
+    if (round >= 15 && (team.roster.K?.length || 0) === 0) {
+      pick = players.find(p => !p.drafted && p.pos.toUpperCase().trim() === "K");
+    } else if (round >= 15 && (team.roster.DST?.length || 0) === 0) {
+      pick = players.find(p => !p.drafted && p.pos.toUpperCase().trim() === "DST");
+    }
 
     if (!pick) {
-      const teamNeeds = {};
-      for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
-        teamNeeds[pos] = Math.max(0, startersRequired[pos] - team.roster[pos].length);
-      }
-
-      // force K/DST late if missing
-      if (round >= 15 && team.roster.K.length === 0) {
-        pick = players.find(p => !p.drafted && p.pos === "K");
-      } else if (round >= 15 && team.roster.DST.length === 0) {
-        pick = players.find(p => !p.drafted && p.pos === "DST");
-      }
-
-      if (!pick) {
-        pick = suggestPick(players, teamNeeds);
-      }
+      pick = suggestPick(players, teamNeeds);
     }
+  }
 
-    if (!pick) return;
-    pick.drafted = true;
+  if (!pick) return;
+  pick.drafted = true;
 
-    // Place pick into starter -> FLEX -> position max -> bench
-    if (team.roster[pick.pos].length < startersRequired[pick.pos]) {
-      team.roster[pick.pos].push(pick);
-    } else if ((pick.pos === "RB" || pick.pos === "WR" || pick.pos === "TE") && team.roster.FLEX.length < startersRequired.FLEX) {
-      team.roster.FLEX.push(pick);
-    } else if (team.roster[pick.pos].length < maxPlayers[pick.pos]) {
-      team.roster[pick.pos].push(pick);
+  // Normalize position string
+  const pos = pick.pos.trim().toUpperCase();
+
+  // Ensure roster slot exists
+  if (!team.roster[pos]) {
+    team.roster[pos] = [];
+  }
+
+  // Place pick into starter -> FLEX -> position max -> bench
+  if (team.roster[pos].length < (startersRequired[pos] || 0)) {
+    team.roster[pos].push(pick);
+  } else if (["RB", "WR", "TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
+    team.roster.FLEX.push(pick);
+  } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
+    team.roster[pos].push(pick);
+  } else {
+    // Weighted bench rules
+    const be = team.roster.BE;
+    if (pos === "QB" && be.filter(p => p.pos === "QB").length < 1) {
+      be.push(pick);
+    } else if (["RB", "WR", "TE"].includes(pos)) {
+      be.push(pick);
     } else {
-      // Weighted bench rules
-      const be = team.roster.BE;
-      if (pick.pos === "QB" && be.filter(p => p.pos === "QB").length < 1) {
-        be.push(pick);
-      } else if (["RB","WR","TE"].includes(pick.pos)) {
-        be.push(pick);
-      } else {
-        be.push(pick); // DST/K fallback
-      }
+      be.push(pick); // fallback
     }
+  }
 
-    const updatedTeams = [...teams];
-    updatedTeams[pickTeamIndex] = team;
-    setTeams(updatedTeams);
-    setCurrentPickIndex(currentPickIndex + 1);
-  };
+  const updatedTeams = [...teams];
+  updatedTeams[pickTeamIndex] = team;
+  setTeams(updatedTeams);
+  setCurrentPickIndex(currentPickIndex + 1);
+};
 
   const currentTeamIndex = draftOrder[currentPickIndex];
   const currentTeam = currentTeamIndex!=null?teams[currentTeamIndex]:null;
