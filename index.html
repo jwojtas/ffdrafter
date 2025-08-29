@@ -95,19 +95,26 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/.netlify/functions/adp");
+     const res = await fetch("/.netlify/functions/adp");
 if (!res.ok) throw new Error("Failed to fetch ADP");
 const data = await res.json();
 
-// fantasyfootballcalculator API returns `players` array
+// normalize positions
+const normalizePos = (pos) => {
+  if (!pos) return "";
+  const p = pos.trim().toUpperCase();
+  if (p === "DEF" || p === "D") return "DST";
+  return p;
+};
+
 const mapped = data.players.map(p => ({
   name: p.player_name || p.name,
-  pos: p.position || p.pos,
+  pos: normalizePos(p.position || p.pos),
   adp: p.adp,
   drafted: false
 }));
-setPlayers(mapped);
 
+setPlayers(mapped);
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
