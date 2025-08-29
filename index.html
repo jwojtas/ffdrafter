@@ -153,10 +153,14 @@ function App() {
         teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
       }
 
-      // force K/DST late if missing
-      if (round >= 15 && (team.roster.K?.length || 0) === 0) {
+      // Guarantee DST and K by final 2 picks
+      const teamPicksMade = Object.values(team.roster).flat().length;
+      const teamPicksLeft = 16 - teamPicksMade;
+
+      if (!pick && (team.roster.K?.length || 0) === 0 && teamPicksLeft <= 2) {
         pick = players.find(p => !p.drafted && normalizePos(p.pos) === "K");
-      } else if (round >= 15 && (team.roster.DST?.length || 0) === 0) {
+      }
+      if (!pick && (team.roster.DST?.length || 0) === 0 && teamPicksLeft <= 2) {
         pick = players.find(p => !p.drafted && normalizePos(p.pos) === "DST");
       }
 
