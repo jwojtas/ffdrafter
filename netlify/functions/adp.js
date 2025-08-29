@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+
 import { XMLParser } from "fast-xml-parser";
 
 export async function handler(event, context) {
