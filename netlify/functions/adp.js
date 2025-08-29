@@ -1,7 +1,7 @@
 export async function handler(event, context) {
   try {
-    // Try to fetch 400 players in one call
-    const url = "https://fantasyfootballcalculator.com/api/v1/adp/standard?position=all&teams=12&year=2025&count=400";
+    // Try to fetch "all players" with count param
+    let url = "https://fantasyfootballcalculator.com/api/v1/adp/standard?position=all&teams=12&year=2025&count=400";
     let res = await fetch(url);
 
     if (!res.ok) {
@@ -12,10 +12,10 @@ export async function handler(event, context) {
     }
 
     let data = await res.json();
-    let players = data.players || [];
+    let players = Array.isArray(data.players) ? data.players : [];
 
-    // If fewer than 400 players returned, fetch per-position and merge
-    if (players.length < 400) {
+    // 🚨 If no players or not enough, fallback to per-position fetch
+    if (players.length === 0 || players.length < 400) {
       const positions = ["qb", "rb", "wr", "te", "k", "def"];
       const results = await Promise.all(
         positions.map(async (pos) => {
@@ -24,16 +24,16 @@ export async function handler(event, context) {
           );
           if (!r.ok) return [];
           const d = await r.json();
-          return d.players || [];
+          return Array.isArray(d.players) ? d.players : [];
         })
       );
       players = results.flat();
 
-      // Deduplicate by player name
+      // Deduplicate by player_name
       const seen = new Set();
       players = players.filter((p) => {
         const name = p.player_name || p.name;
-        if (seen.has(name)) return false;
+        if (!name || seen.has(name)) return false;
         seen.add(name);
         return true;
       });
