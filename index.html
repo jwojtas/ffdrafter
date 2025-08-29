@@ -101,7 +101,11 @@ function App() {
     setLoading(true);
     setError("");
     try {
-     // fantasyfootballcalculator API returns `players` array
+    const res = await fetch("/.netlify/functions/adp");
+if (!res.ok) throw new Error("Failed to fetch ADP");
+const data = await res.json();
+
+// fantasyfootballcalculator API returns `players` array
 const mapped = data.players.map(p => ({
   name: p.player_name || p.name,
   pos: p.position || p.pos,
@@ -109,6 +113,7 @@ const mapped = data.players.map(p => ({
   drafted: false
 }));
 setPlayers(mapped);
+
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
