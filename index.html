@@ -110,13 +110,15 @@ function App() {
       const data = await res.json();
 
       const mapped = (data.players || [])
-        .map(p => ({
-          name: p.player_name || p.name,
-          pos: normalizePos(p.position || p.pos),
-          adp: typeof p.adp === "number" ? p.adp : 999,
-          drafted: false
-        }));
-      setPlayers(mapped);
+  .map(p => ({
+    name: p.player_name || p.name,
+    pos: normalizePos(p.position || p.pos),
+    adp: Number(p.adp) || 999,
+    drafted: false
+  }));
+
+console.log("Mapped players:", mapped.length);
+setPlayers(mapped);
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
