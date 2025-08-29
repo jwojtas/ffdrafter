@@ -19,7 +19,6 @@ const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Tea
 const startersRequired = { QB:1,RB:2,WR:2,TE:1,FLEX:1,DST:1,K:1 };
 const maxPlayers = { QB:4,RB:8,WR:8,TE:3,FLEX:1,DST:3,K:3,BE:7 };
 
-// 🔧 Normalize positions from API
 const normalizePos = (pos) => {
   if (!pos) return "";
   const p = pos.trim().toUpperCase();
@@ -106,23 +105,18 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/.netlify/functions/adp"); // your existing endpoint
-if (!res.ok) throw new Error("Failed to fetch ADP");
-const data = await res.json();
+      const res = await fetch("/.netlify/functions/adp");
+      if (!res.ok) throw new Error("Failed to fetch ADP");
+      const data = await res.json();
 
-// Normalize position mapping function (assumed defined above):
-// const normalizePos = pos => { ... };
-
-const mapped = (data.players || [])
-  .slice(0, 400) // take only the top 400 players
-  .map(p => ({
-    name: p.player_name || p.name,
-    pos: normalizePos(p.position || p.pos),
-    adp: p.adp,
-    drafted: false
-  }));
-
-setPlayers(mapped);
+      const mapped = (data.players || [])
+        .map(p => ({
+          name: p.player_name || p.name,
+          pos: normalizePos(p.position || p.pos),
+          adp: typeof p.adp === "number" ? p.adp : 999,
+          drafted: false
+        }));
+      setPlayers(mapped);
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
@@ -181,7 +175,6 @@ setPlayers(mapped);
     const pos = normalizePos(pick.pos);
     if (!team.roster[pos]) team.roster[pos] = [];
 
-    // Place pick into starter -> FLEX -> position max -> bench
     if (team.roster[pos].length < (startersRequired[pos] || 0)) {
       team.roster[pos].push(pick);
     } else if (["RB", "WR", "TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
@@ -189,14 +182,7 @@ setPlayers(mapped);
     } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
       team.roster[pos].push(pick);
     } else {
-      const be = team.roster.BE;
-      if (pos === "QB" && be.filter(p => normalizePos(p.pos) === "QB").length < 1) {
-        be.push(pick);
-      } else if (["RB","WR","TE"].includes(pos)) {
-        be.push(pick);
-      } else {
-        be.push(pick); // fallback
-      }
+      team.roster.BE.push(pick);
     }
 
     const updatedTeams = [...teams];
@@ -220,7 +206,6 @@ setPlayers(mapped);
   const suggestedPick = currentTeam ? suggestPick(players, teamNeeds) : null;
   const draftComplete = currentPickIndex >= draftOrder.length;
 
-  // Auto-pick for CPU teams
   React.useEffect(() => {
     if (!draftStarted || draftComplete) return;
     if (currentTeamIndex == null) return;
@@ -231,14 +216,27 @@ setPlayers(mapped);
     }
   }, [currentPickIndex, draftStarted, fastDraft]);
 
+  // ✅ Fixed grade function
   const gradeTeam = (team) => {
-    if(!team || !team.roster) return 0;
-    const totalADP = Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
-    const posScore = Object.entries(team.roster).reduce((sum,[pos,arr])=>{
-      let req = startersRequired[pos] || 0;
-      return sum + Math.min((arr.length||0)/req,1);
-    },0);
-    return ((posScore/6)*50 + ((teams.length*16-totalADP)/(teams.length*16))*50).toFixed(1);
+    if (!team || !team.roster) return 0;
+
+    const players = Object.values(team.roster).flat();
+    if (players.length === 0) return 0;
+
+    const totalADP = players.reduce((sum, p) => {
+      const val = typeof p.adp === "number" && !isNaN(p.adp) ? p.adp : 999;
+      return sum + val;
+    }, 0);
+
+    const posScore = Object.entries(startersRequired).reduce((sum, [pos, req]) => {
+      const have = (team.roster[pos] || []).length;
+      return sum + Math.min(have / (req || 1), 1);
+    }, 0);
+
+    const adpScore = ((players.length * teams.length * 16) - totalADP) / (players.length * teams.length * 16);
+    const grade = (posScore / Object.keys(startersRequired).length) * 50 + Math.max(0, adpScore) * 50;
+
+    return grade.toFixed(1);
   };
 
   return (
