@@ -3,128 +3,142 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fantasy Draft Simulator with Grading</title>
+  <title>Fantasy Draft Simulator - Full Roster</title>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 text-gray-900">
-  <div id="root"></div>
+<div id="root"></div>
 
-  <script type="text/babel">
+<script type="text/babel">
 
 const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Team 7","Team 8"];
 
-function generateSnakeOrder(numTeams, totalRounds, userPickIndex) {
-  let order = [];
-  for (let round = 0; round < totalRounds; round++) {
-    let roundOrder = Array.from({length: numTeams}, (_, i) => i);
-    if (round % 2 !== 0) roundOrder.reverse();
+const startersRequired = { QB:1,RB:2,WR:2,TE:1,FLEX:1,DST:1,K:1 };
+const maxPlayers = { QB:4,RB:8,WR:8,TE:3,FLEX:1,DST:3,K:3,BE:7 };
+
+function generateSnakeOrder(numTeams,totalRounds,userPickIndex){
+  let order=[];
+  for(let round=0;round<totalRounds;round++){
+    let roundOrder=Array.from({length:numTeams},(_,i)=>i);
+    if(round%2!==0) roundOrder.reverse();
     order.push(...roundOrder);
   }
-  // Rotate draft so user is at the selected starting position
-  if (userPickIndex != null && userPickIndex > 0) {
-    order = order.map(pick => (pick === 0 ? userPickIndex : pick === userPickIndex ? 0 : pick));
+  if(userPickIndex!=null && userPickIndex>0){
+    order=order.map(pick=>pick===0?userPickIndex:pick===userPickIndex?0:pick);
   }
   return order;
 }
 
-function suggestPick(players, teamNeeds) {
-  let available = players.filter(p => !p.drafted);
-  let needed = available.filter(p => teamNeeds[p.pos] > 0);
-  let sorted = (needed.length ? needed : available).sort((a,b) => a.adp - b.adp);
+function suggestPick(players,teamNeeds){
+  let available=players.filter(p=>!p.drafted);
+  let needed=[];
+  for(let pos of ["QB","RB","WR","TE","FLEX","DST","K"]){
+    if(teamNeeds[pos]>0){
+      if(pos==="FLEX"){
+        needed.push(...available.filter(p=>["RB","WR","TE"].includes(p.pos)));
+      } else {
+        needed.push(...available.filter(p=>p.pos===pos));
+      }
+    }
+  }
+  let sorted=(needed.length?needed:available).sort((a,b)=>a.adp-b.adp);
   return sorted[0];
 }
 
-function App() {
-  const [players, setPlayers] = React.useState([]);
-  const [teams, setTeams] = React.useState([]);
-  const [draftOrder, setDraftOrder] = React.useState([]);
-  const [currentPickIndex, setCurrentPickIndex] = React.useState(0);
-  const [numTeams, setNumTeams] = React.useState(8);
-  const [draftStarted, setDraftStarted] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [userPickPosition, setUserPickPosition] = React.useState(0);
+function App(){
+  const [players,setPlayers]=React.useState([]);
+  const [teams,setTeams]=React.useState([]);
+  const [draftOrder,setDraftOrder]=React.useState([]);
+  const [currentPickIndex,setCurrentPickIndex]=React.useState(0);
+  const [numTeams,setNumTeams]=React.useState(8);
+  const [draftStarted,setDraftStarted]=React.useState(false);
+  const [loading,setLoading]=React.useState(false);
+  const [error,setError]=React.useState("");
+  const [userPickPosition,setUserPickPosition]=React.useState(0);
 
-  const fetchADP = async () => {
+  const fetchADP=async()=>{
     setLoading(true);
     setError("");
-    try {
-      const res = await fetch("/.netlify/functions/adp");
-      if (!res.ok) throw new Error("Fetch failed");
-      const data = await res.json();
-      const mapped = data.players.map(p => ({...p, drafted:false}));
+    try{
+      const res=await fetch("/.netlify/functions/adp");
+      if(!res.ok) throw new Error("Fetch failed");
+      const data=await res.json();
+      const mapped=data.players.map(p=>({...p,drafted:false}));
       setPlayers(mapped);
-    } catch(e) {
+    }catch(e){
       console.error(e);
       setError("Could not fetch ADP from Netlify function.");
     }
     setLoading(false);
   };
 
-  const startDraft = () => {
-    let draftTeams = [];
-    for (let i=0;i<numTeams;i++) {
-      draftTeams.push({name: defaultTeams[i]||`Team ${i+1}`, roster: {QB:[], RB:[], WR:[], TE:[], DST:[], K:[]}});
+  const startDraft=()=>{
+    let draftTeams=[];
+    for(let i=0;i<numTeams;i++){
+      draftTeams.push({name:defaultTeams[i]||`Team ${i+1}`,
+                       roster:{QB:[],RB:[],WR:[],TE:[],FLEX:[],DST:[],K:[],BE:[]}});
     }
     setTeams(draftTeams);
-    const order = generateSnakeOrder(numTeams, 15, userPickPosition);
+    const order=generateSnakeOrder(numTeams,15,userPickPosition);
     setDraftOrder(order);
     setCurrentPickIndex(0);
     setDraftStarted(true);
   };
 
-  const makePick = () => {
-    const pickTeamIndex = draftOrder[currentPickIndex];
-    const team = teams[pickTeamIndex];
-    const teamNeeds = {
-      QB: 1 - team.roster.QB.length,
-      RB: 2 - team.roster.RB.length,
-      WR: 2 - team.roster.WR.length,
-      TE: 1 - team.roster.TE.length,
-      DST: 1 - team.roster.DST.length,
-      K: 1 - team.roster.K.length
-    };
-    const pick = suggestPick(players, teamNeeds);
-    if (!pick) return;
-    pick.drafted = true;
-    team.roster[pick.pos].push(pick);
-    const updatedTeams = [...teams];
-    updatedTeams[pickTeamIndex] = team;
+  const makePick=()=>{
+    if(currentPickIndex>=draftOrder.length) return;
+    const pickTeamIndex=draftOrder[currentPickIndex];
+    const team=teams[pickTeamIndex];
+    const teamNeeds={};
+    for(let pos of ["QB","RB","WR","TE","FLEX","DST","K"]){
+      teamNeeds[pos]=Math.max(0,startersRequired[pos]-team.roster[pos].length);
+    }
+    const pick=suggestPick(players,teamNeeds);
+    if(!pick) return;
+    pick.drafted=true;
+    if(teamNeeds[pick.pos]>0){
+      team.roster[pick.pos].push(pick);
+    } else if(pick.pos==="RB"||pick.pos==="WR"||pick.pos==="TE"){
+      if(teamNeeds.FLEX>0){team.roster.FLEX.push(pick);}
+      else if(team.roster.BE.length<maxPlayers.BE){team.roster.BE.push(pick);}
+    } else if(team.roster.BE.length<maxPlayers.BE){
+      team.roster.BE.push(pick);
+    }
+    const updatedTeams=[...teams];
+    updatedTeams[pickTeamIndex]=team;
     setTeams(updatedTeams);
     setCurrentPickIndex(currentPickIndex+1);
   };
 
-  const currentTeam = draftOrder[currentPickIndex] != null ? teams[draftOrder[currentPickIndex]] : null;
-  const teamNeeds = currentTeam ? {
-    QB:1-currentTeam.roster.QB.length,
-    RB:2-currentTeam.roster.RB.length,
-    WR:2-currentTeam.roster.WR.length,
-    TE:1-currentTeam.roster.TE.length,
-    DST:1-currentTeam.roster.DST.length,
-    K:1-currentTeam.roster.K.length
-  } : {};
-  const suggestedPick = currentTeam ? suggestPick(players, teamNeeds) : null;
+  const currentTeam=draftOrder[currentPickIndex]!=null?teams[draftOrder[currentPickIndex]]:null;
+  const teamNeeds=currentTeam?{QB:Math.max(0,startersRequired.QB-currentTeam.roster.QB.length),
+                               RB:Math.max(0,startersRequired.RB-currentTeam.roster.RB.length),
+                               WR:Math.max(0,startersRequired.WR-currentTeam.roster.WR.length),
+                               TE:Math.max(0,startersRequired.TE-currentTeam.roster.TE.length),
+                               FLEX:Math.max(0,startersRequired.FLEX-currentTeam.roster.FLEX.length),
+                               DST:Math.max(0,startersRequired.DST-currentTeam.roster.DST.length),
+                               K:Math.max(0,startersRequired.K-currentTeam.roster.K.length)}:{};
+  const suggestedPick=currentTeam?suggestPick(players,teamNeeds):null;
+  const draftComplete=currentPickIndex>=draftOrder.length;
 
-  const draftComplete = currentPickIndex >= draftOrder.length;
-
-  const gradeTeam = (team) => {
-    const totalADP = Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
-    const posScore = Object.entries(team.roster).reduce((sum,[pos, arr]) => {
-      let req = {QB:1,RB:2,WR:2,TE:1,DST:1,K:1}[pos];
-      return sum + Math.min(arr.length/req,1);
+  const gradeTeam=(team)=>{
+    const totalADP=Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
+    const posScore=Object.entries(team.roster).reduce((sum,[pos,arr])=>{
+      let req=startersRequired[pos]||0;
+      return sum+Math.min(arr.length/req,1);
     },0);
-    const grade = ((posScore/6)*50 + ((teams.length*15-totalADP)/(teams.length*15))*50).toFixed(1);
+    const grade=((posScore/6)*50 + ((teams.length*15-totalADP)/(teams.length*15))*50).toFixed(1);
     return grade;
   };
 
   return (
     <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-4">Fantasy Draft Simulator with Grading</h1>
+      <h1 className="text-3xl font-bold mb-4">Fantasy Draft Simulator - Full Roster</h1>
 
-      {!draftStarted && (
+      {!draftStarted&&(
         <div className="mb-6">
           <label className="mr-2"># of Teams:</label>
           <select value={numTeams} onChange={e=>setNumTeams(Number(e.target.value))} className="border rounded px-2 py-1">
@@ -138,45 +152,59 @@ function App() {
           </select>
           <button onClick={fetchADP} className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Fetch ADP</button>
           <button onClick={startDraft} className="ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Start Draft</button>
-          {loading && <span className="ml-2">Loading ADP...</span>}
-          {error && <p className="text-red-500 mt-2">{error}</p>}
+          {loading&&<span className="ml-2">Loading ADP...</span>}
+          {error&&<p className="text-red-500 mt-2">{error}</p>}
         </div>
       )}
 
-      {draftStarted && !draftComplete && currentTeam && (
+      {draftStarted&&!draftComplete&&currentTeam&&(
         <div className="mb-6">
           <h2 className="text-xl font-semibold">Current Pick: {currentTeam.name}</h2>
-          <p>Suggested Pick: {suggestedPick ? `${suggestedPick.name} (${suggestedPick.pos})` : "No pick available"}</p>
+          <p>Suggested Pick: {suggestedPick?`${suggestedPick.name} (${suggestedPick.pos})`:"No pick available"}</p>
           <button onClick={makePick} className="mt-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Draft Suggested Pick</button>
         </div>
       )}
 
-      {draftStarted && (
+      {draftStarted&&(
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {teams.map((team,i)=>(
-            <div key={i} className={`bg-white p-4 rounded-xl shadow ${i===userPickPosition ? 'border-2 border-blue-500':''}`}>
+            <div key={i} className={`bg-white p-4 rounded-xl shadow ${i===userPickPosition?'border-2 border-blue-500':''}`}>
               <h3 className="font-bold mb-2">{team.name}</h3>
-              {Object.entries(team.roster).map(([pos,arr])=><p key={pos}><strong>{pos}:</strong> {arr.map(p=>p.name).join(", ")}</p>)}
+              {Object.entries(team.roster).map(([pos,arr])=>{
+                const isFLEX=pos==='FLEX';
+                return <p key={pos} className={isFLEX?'text-green-600 font-semibold':''}><strong>{pos}:</strong> {arr.map(p=>p.name).join(", ")}</p>
+              })}
             </div>
           ))}
         </div>
       )}
 
-      {draftComplete && (
+      {draftComplete&&(
         <div className="bg-green-100 p-4 rounded-xl">
           <h2 className="text-xl font-bold mb-2">Draft Complete!</h2>
           <p>Your Team Grade: {gradeTeam(teams[userPickPosition])} / 100</p>
+          <p>Grades for Other Teams:</p>
+          <ul>
+            {teams.map((t,i)=>(
+              <li key={i}>{t.name}: {gradeTeam(t)}{i===userPickPosition?' (You)':''}</li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {draftStarted && (
+      {draftStarted&&(
         <div className="bg-gray-50 p-4 rounded-xl mt-4">
           <h2 className="font-semibold mb-2">Draft History</h2>
           <ol className="list-decimal list-inside max-h-64 overflow-auto">
             {draftOrder.slice(0,currentPickIndex).map((tIndex,idx)=>{
-              const t = teams[tIndex];
-              const pick = Object.values(t.roster).flat().slice(-1)[0];
-              return <li key={idx} className={tIndex===userPickPosition ? 'font-bold text-blue-600':''}>{t.name}: {pick ? pick.name+` (${pick.pos})` : 'No pick'}</li>;
+              const t=teams[tIndex];
+              const pick=Object.values(t.roster).flat().slice(-1)[0];
+              const isFLEX=Object.entries(t.roster).some(([pos,arr])=>arr.includes(pick) && pos==='FLEX');
+              return (
+                <li key={idx} className={`${tIndex===userPickPosition?'font-bold text-blue-600':''} ${isFLEX?'text-green-600 font-semibold':''}`}>
+                  {t.name}: {pick?pick.name+` (${pick.pos})`:'No pick'}
+                </li>
+              );
             })}
           </ol>
         </div>
@@ -188,7 +216,3 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
-
-  </script>
-</body>
-</html>
