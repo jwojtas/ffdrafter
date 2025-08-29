@@ -13,9 +13,20 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Team 7","Team 8"];
+
+const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Team 7","Team 8","Team 9","Team 10","Team 11","Team 12"];
+
 const startersRequired = { QB:1,RB:2,WR:2,TE:1,FLEX:1,DST:1,K:1 };
 const maxPlayers = { QB:4,RB:8,WR:8,TE:3,FLEX:1,DST:3,K:3,BE:7 };
+
+// 🔧 Normalize positions from API
+const normalizePos = (pos) => {
+  if (!pos) return "";
+  const p = pos.trim().toUpperCase();
+  if (p === "DEF" || p === "D") return "DST";
+  if (p === "PK" || p === "PLACEKICKER" || p === "PLACE KICKER") return "K";
+  return p;
+};
 
 function generateSnakeOrder(numTeams, totalRounds) {
   let order = [];
@@ -33,9 +44,9 @@ function suggestPick(players, teamNeeds) {
   for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
     if (teamNeeds[pos] > 0) {
       if (pos === "FLEX") {
-        needed.push(...available.filter(p => ["RB","WR","TE"].includes(p.pos)));
+        needed.push(...available.filter(p => ["RB","WR","TE"].includes(normalizePos(p.pos))));
       } else {
-        needed.push(...available.filter(p => p.pos === pos));
+        needed.push(...available.filter(p => normalizePos(p.pos) === pos));
       }
     }
   }
@@ -70,7 +81,7 @@ function ManualPick({ players, onPick }) {
       >
         {filtered.map((p, i) => (
           <option key={i} value={p.name}>
-            {p.name} ({p.pos}) – ADP {p.adp}
+            {p.name} ({normalizePos(p.pos)}) – ADP {p.adp}
           </option>
         ))}
       </select>
@@ -95,26 +106,17 @@ function App() {
     setLoading(true);
     setError("");
     try {
-     const res = await fetch("/.netlify/functions/adp");
-if (!res.ok) throw new Error("Failed to fetch ADP");
-const data = await res.json();
+      const res = await fetch("/.netlify/functions/adp");
+      if (!res.ok) throw new Error("Failed to fetch ADP");
+      const data = await res.json();
 
-// normalize positions
-const normalizePos = (pos) => {
-  if (!pos) return "";
-  const p = pos.trim().toUpperCase();
-  if (p === "DEF" || p === "D") return "DST";
-  return p;
-};
-
-const mapped = data.players.map(p => ({
-  name: p.player_name || p.name,
-  pos: normalizePos(p.position || p.pos),
-  adp: p.adp,
-  drafted: false
-}));
-
-setPlayers(mapped);
+      const mapped = data.players.map(p => ({
+        name: p.player_name || p.name,
+        pos: normalizePos(p.position || p.pos),
+        adp: p.adp,
+        drafted: false
+      }));
+      setPlayers(mapped);
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
@@ -138,78 +140,72 @@ setPlayers(mapped);
   };
 
   const makePick = (manualPlayer = null) => {
-  if (currentPickIndex >= draftOrder.length) return;
-  const pickTeamIndex = draftOrder[currentPickIndex];
-  const team = teams[pickTeamIndex];
-  const round = Math.floor(currentPickIndex / numTeams) + 1;
+    if (currentPickIndex >= draftOrder.length) return;
+    const pickTeamIndex = draftOrder[currentPickIndex];
+    const team = teams[pickTeamIndex];
+    const round = Math.floor(currentPickIndex / numTeams) + 1;
 
-  let pick = manualPlayer;
-
-  if (!pick) {
-    const teamNeeds = {};
-    for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
-      teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
-    }
-
-    // force K/DST late if missing
-    if (round >= 15 && (team.roster.K?.length || 0) === 0) {
-      pick = players.find(p => !p.drafted && p.pos.toUpperCase().trim() === "K");
-    } else if (round >= 15 && (team.roster.DST?.length || 0) === 0) {
-      pick = players.find(p => !p.drafted && p.pos.toUpperCase().trim() === "DST");
-    }
+    let pick = manualPlayer;
 
     if (!pick) {
-      pick = suggestPick(players, teamNeeds);
+      const teamNeeds = {};
+      for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
+        teamNeeds[pos] = Math.max(0, startersRequired[pos] - (team.roster[pos]?.length || 0));
+      }
+
+      // force K/DST late if missing
+      if (round >= 15 && (team.roster.K?.length || 0) === 0) {
+        pick = players.find(p => !p.drafted && normalizePos(p.pos) === "K");
+      } else if (round >= 15 && (team.roster.DST?.length || 0) === 0) {
+        pick = players.find(p => !p.drafted && normalizePos(p.pos) === "DST");
+      }
+
+      if (!pick) {
+        pick = suggestPick(players, teamNeeds);
+      }
     }
-  }
 
-  if (!pick) return;
-  pick.drafted = true;
+    if (!pick) return;
+    pick.drafted = true;
 
-  // Normalize position string
-  const pos = pick.pos.trim().toUpperCase();
+    const pos = normalizePos(pick.pos);
+    if (!team.roster[pos]) team.roster[pos] = [];
 
-  // Ensure roster slot exists
-  if (!team.roster[pos]) {
-    team.roster[pos] = [];
-  }
-
-  // Place pick into starter -> FLEX -> position max -> bench
-  if (team.roster[pos].length < (startersRequired[pos] || 0)) {
-    team.roster[pos].push(pick);
-  } else if (["RB", "WR", "TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
-    team.roster.FLEX.push(pick);
-  } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
-    team.roster[pos].push(pick);
-  } else {
-    // Weighted bench rules
-    const be = team.roster.BE;
-    if (pos === "QB" && be.filter(p => p.pos === "QB").length < 1) {
-      be.push(pick);
-    } else if (["RB", "WR", "TE"].includes(pos)) {
-      be.push(pick);
+    // Place pick into starter -> FLEX -> position max -> bench
+    if (team.roster[pos].length < (startersRequired[pos] || 0)) {
+      team.roster[pos].push(pick);
+    } else if (["RB", "WR", "TE"].includes(pos) && team.roster.FLEX.length < startersRequired.FLEX) {
+      team.roster.FLEX.push(pick);
+    } else if (team.roster[pos].length < (maxPlayers[pos] || 99)) {
+      team.roster[pos].push(pick);
     } else {
-      be.push(pick); // fallback
+      const be = team.roster.BE;
+      if (pos === "QB" && be.filter(p => normalizePos(p.pos) === "QB").length < 1) {
+        be.push(pick);
+      } else if (["RB","WR","TE"].includes(pos)) {
+        be.push(pick);
+      } else {
+        be.push(pick); // fallback
+      }
     }
-  }
 
-  const updatedTeams = [...teams];
-  updatedTeams[pickTeamIndex] = team;
-  setTeams(updatedTeams);
-  setCurrentPickIndex(currentPickIndex + 1);
-};
+    const updatedTeams = [...teams];
+    updatedTeams[pickTeamIndex] = team;
+    setTeams(updatedTeams);
+    setCurrentPickIndex(currentPickIndex + 1);
+  };
 
   const currentTeamIndex = draftOrder[currentPickIndex];
   const currentTeam = currentTeamIndex!=null?teams[currentTeamIndex]:null;
   const round = Math.floor(currentPickIndex / numTeams) + 1;
   const teamNeeds = currentTeam ? {
-    QB: Math.max(0, startersRequired.QB-currentTeam.roster.QB.length),
-    RB: Math.max(0, startersRequired.RB-currentTeam.roster.RB.length),
-    WR: Math.max(0, startersRequired.WR-currentTeam.roster.WR.length),
-    TE: Math.max(0, startersRequired.TE-currentTeam.roster.TE.length),
-    FLEX: Math.max(0, startersRequired.FLEX-currentTeam.roster.FLEX.length),
-    DST: Math.max(0, startersRequired.DST-currentTeam.roster.DST.length),
-    K: Math.max(0, startersRequired.K-currentTeam.roster.K.length)
+    QB: Math.max(0, startersRequired.QB-(currentTeam.roster.QB?.length||0)),
+    RB: Math.max(0, startersRequired.RB-(currentTeam.roster.RB?.length||0)),
+    WR: Math.max(0, startersRequired.WR-(currentTeam.roster.WR?.length||0)),
+    TE: Math.max(0, startersRequired.TE-(currentTeam.roster.TE?.length||0)),
+    FLEX: Math.max(0, startersRequired.FLEX-(currentTeam.roster.FLEX?.length||0)),
+    DST: Math.max(0, startersRequired.DST-(currentTeam.roster.DST?.length||0)),
+    K: Math.max(0, startersRequired.K-(currentTeam.roster.K?.length||0))
   } : {};
   const suggestedPick = currentTeam ? suggestPick(players, teamNeeds) : null;
   const draftComplete = currentPickIndex >= draftOrder.length;
@@ -230,13 +226,13 @@ setPlayers(mapped);
     const totalADP = Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
     const posScore = Object.entries(team.roster).reduce((sum,[pos,arr])=>{
       let req = startersRequired[pos] || 0;
-      return sum + Math.min(arr.length/req,1);
+      return sum + Math.min((arr.length||0)/req,1);
     },0);
     return ((posScore/6)*50 + ((teams.length*16-totalADP)/(teams.length*16))*50).toFixed(1);
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-4">Fantasy Draft Simulator - Full Roster</h1>
 
       {!draftStarted && (
@@ -282,7 +278,7 @@ setPlayers(mapped);
             Round {round}/16 – Current Pick: {currentTeam.name}
           </h2>
           <p className="mb-2">
-            Suggested Pick: {suggestedPick ? `${suggestedPick.name} (${suggestedPick.pos || "Unknown"})` : "No pick available"}
+            Suggested Pick: {suggestedPick ? `${suggestedPick.name} (${normalizePos(suggestedPick.pos)})` : "No pick available"}
           </p>
 
           {(currentTeamIndex === userPickPosition || manualAllTeams) ? (
@@ -302,49 +298,48 @@ setPlayers(mapped);
       )}
 
       {draftStarted && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-    {(() => {
-      const orderedTeams = [
-        teams[userPickPosition],
-        ...teams.slice(0, userPickPosition),
-        ...teams.slice(userPickPosition + 1)
-      ];
-      return orderedTeams.map((team, i) => {
-        const bench = [...team.roster.BE];
-        const isUser = team === teams[userPickPosition];
-        return (
-          <div
-            key={i}
-            className={`bg-white p-4 rounded-xl shadow ${
-              isUser ? "border-2 border-blue-500" : ""
-            }`}
-          >
-            <h3 className="font-bold mb-2">
-              {team?.name || `Team`}
-              {isUser ? " (You)" : ""}
-            </h3>
-            {["QB", "RB", "WR", "TE", "FLEX", "DST", "K"].map((pos) => {
-              const arr = team.roster[pos] || [];
-              const starters = arr.slice(0, startersRequired[pos] || 0);
-              const extras = arr.slice(startersRequired[pos] || 0);
-              bench.push(...extras);
-              let color = "";
-              if (pos === "FLEX") color = "text-green-600 font-semibold";
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          {(() => {
+            const orderedTeams = [
+              teams[userPickPosition],
+              ...teams.slice(0, userPickPosition),
+              ...teams.slice(userPickPosition + 1)
+            ];
+            return orderedTeams.map((team, i) => {
+              const bench = [...team.roster.BE];
+              const isUser = team === teams[userPickPosition];
               return (
-                <div key={pos} className={`${color} mb-1`}>
-                  <strong>{pos}:</strong> {starters.map((p) => p.name).join(", ")}
+                <div
+                  key={i}
+                  className={`bg-white p-4 rounded-xl shadow ${
+                    isUser ? "border-2 border-blue-500" : ""
+                  }`}
+                >
+                  <h3 className="font-bold mb-2">
+                    {team?.name || `Team`} {isUser ? "(You)" : ""}
+                  </h3>
+                  {["QB", "RB", "WR", "TE", "FLEX", "DST", "K"].map((pos) => {
+                    const arr = team.roster[pos] || [];
+                    const starters = arr.slice(0, startersRequired[pos] || 0);
+                    const extras = arr.slice(startersRequired[pos] || 0);
+                    bench.push(...extras);
+                    let color = pos === "FLEX" ? "text-green-600 font-semibold" : "";
+                    return (
+                      <div key={pos} className={`${color} mb-1`}>
+                        <strong>{pos}:</strong> {starters.map((p) => p.name).join(", ")}
+                      </div>
+                    );
+                  })}
+                  <div className="text-gray-500 italic mb-1">
+                    <strong>BE:</strong> {bench.map((p) => p.name).join(", ")}
+                  </div>
                 </div>
               );
-            })}
-            <div className="text-gray-500 italic mb-1">
-              <strong>BE:</strong> {bench.map((p) => p.name).join(", ")}
-            </div>
-          </div>
-        );
-      });
-    })()}
-  </div>
-)}
+            });
+          })()}
+        </div>
+      )}
+
       {draftComplete && teams[userPickPosition] && (
         <div className="bg-green-100 p-4 rounded-xl">
           <h2 className="text-xl font-bold mb-2">Draft Complete!</h2>
@@ -364,6 +359,5 @@ setPlayers(mapped);
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<App />);
 </script>
-
 </body>
 </html>
