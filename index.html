@@ -89,6 +89,7 @@ function App() {
   const [error, setError] = React.useState("");
   const [userPickPosition, setUserPickPosition] = React.useState(0);
   const [manualAllTeams, setManualAllTeams] = React.useState(false);
+  const [fastDraft, setFastDraft] = React.useState(false);
 
   const fetchADP = async () => {
     setLoading(true);
@@ -203,10 +204,11 @@ setPlayers(mapped);
     if (!draftStarted || draftComplete) return;
     if (currentTeamIndex == null) return;
     if (currentTeamIndex !== userPickPosition && !manualAllTeams) {
-      const timer = setTimeout(() => makePick(), 1000); // 1 second delay
+      const delay = fastDraft ? 0 : 1000;
+      const timer = setTimeout(() => makePick(), delay);
       return () => clearTimeout(timer);
     }
-  }, [currentPickIndex, draftStarted]);
+  }, [currentPickIndex, draftStarted, fastDraft]);
 
   const gradeTeam = (team) => {
     if(!team || !team.roster) return 0;
@@ -243,6 +245,15 @@ setPlayers(mapped);
             />
             I will pick for all teams
           </label>
+          <label className="ml-4">
+            <input 
+              type="checkbox" 
+              checked={fastDraft} 
+              onChange={e => setFastDraft(e.target.checked)} 
+              className="mr-1"
+            />
+            Fast Draft (CPU picks instantly)
+          </label>
           <button onClick={fetchADP} className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Load Players</button>
           <button onClick={startDraft} className="ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Start Draft</button>
           {loading && <span className="ml-2">Loading...</span>}
@@ -270,7 +281,7 @@ setPlayers(mapped);
               <ManualPick players={players} onPick={(player) => makePick(player)} />
             </div>
           ) : (
-            <p className="text-gray-600">Auto-picking in progress...</p>
+            <p className="text-gray-600">Auto-picking...</p>
           )}
         </div>
       )}
