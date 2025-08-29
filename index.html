@@ -17,7 +17,6 @@ const defaultTeams = ["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6","Tea
 const startersRequired = { QB:1,RB:2,WR:2,TE:1,FLEX:1,DST:1,K:1 };
 const maxPlayers = { QB:4,RB:8,WR:8,TE:3,FLEX:1,DST:3,K:3,BE:7 };
 
-// Snake order with draft position
 function generateSnakeOrder(numTeams, totalRounds, userPickIndex) {
   let order = [];
   for (let round = 0; round < totalRounds; round++) {
@@ -36,23 +35,6 @@ function generateSnakeOrder(numTeams, totalRounds, userPickIndex) {
   return order;
 }
 
-// Suggest pick based on team needs
-function suggestPick(players, teamNeeds) {
-  let available = players.filter(p => !p.drafted);
-  let needed = [];
-  for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
-    if (teamNeeds[pos] > 0) {
-      if (pos === "FLEX") {
-        needed.push(...available.filter(p => ["RB","WR","TE"].includes(p.pos)));
-      } else {
-        needed.push(...available.filter(p => p.pos === pos));
-      }
-    }
-  }
-  let sorted = (needed.length ? needed : available).sort((a,b) => a.adp - b.adp);
-  return sorted[0];
-}
-
 function App() {
   const [players, setPlayers] = React.useState([]);
   const [teams, setTeams] = React.useState([]);
@@ -63,8 +45,9 @@ function App() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [userPickPosition, setUserPickPosition] = React.useState(0);
-  const [draftMode, setDraftMode] = React.useState("auto");
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [manualOtherTeams, setManualOtherTeams] = React.useState(false);
+  const [teamNames, setTeamNames] = React.useState(defaultTeams.slice(0,8));
+  const [searchTerm, setSearchTerm] = React.useState("");
 
   const fetchADP = async () => {
     setLoading(true);
@@ -74,11 +57,15 @@ function App() {
       for(let i=1;i<=200;i++){
         const posArray = ["QB","RB","WR","TE","DST","K"];
         const pos = posArray[Math.floor(Math.random()*posArray.length)];
-        data.players.push({name:`Player ${i}`,pos,posName:`${pos}`,adp:i});
+        data.players.push({
+          name: `Player ${i}`,
+          pos,
+          adp: i,
+          drafted: false
+        });
       }
-      const mapped = data.players.map(p => ({...p,drafted:false}));
-      setPlayers(mapped);
-    } catch (e) {
+      setPlayers(data.players);
+    } catch(e) {
       console.error(e);
       setError("Could not fetch ADP data.");
     }
@@ -88,8 +75,10 @@ function App() {
   const startDraft = () => {
     let draftTeams = [];
     for (let i = 0; i < numTeams; i++) {
-      draftTeams.push({name: defaultTeams[i] || `Team ${i+1}`,
-                       roster: {QB:[],RB:[],WR:[],TE:[],FLEX:[],DST:[],K:[],BE:[]}});
+      draftTeams.push({
+        name: teamNames[i] || `Team ${i+1}`,
+        roster: {QB:[],RB:[],WR:[],TE:[],FLEX:[],DST:[],K:[],BE:[]}
+      });
     }
     setTeams(draftTeams);
     const order = generateSnakeOrder(numTeams, 15, userPickPosition);
@@ -98,145 +87,138 @@ function App() {
     setDraftStarted(true);
   };
 
-  const handlePlayerPick = (player) => {
-    if (!player) return;
-    player.drafted = true;
+  const suggestPick = (team) => {
+    const teamNeeds = {};
+    for(let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
+      teamNeeds[pos] = Math.max(0, startersRequired[pos]-team.roster[pos].length);
+    }
+    const available = players.filter(p => !p.drafted);
+    let needed = [];
+    for(let pos of ["QB","RB","WR","TE","FLEX","DST","K"]){
+      if(teamNeeds[pos]>0){
+        if(pos==="FLEX") needed.push(...available.filter(p=>["RB","WR","TE"].includes(p.pos)));
+        else needed.push(...available.filter(p=>p.pos===pos));
+      }
+    }
+    let sorted = (needed.length?needed:available).sort((a,b)=>a.adp-b.adp);
+    return sorted[0];
+  };
 
-    const pickTeamIndex = draftOrder[currentPickIndex];
-    const team = teams[pickTeamIndex];
-
-    if (team.roster[player.pos].length < startersRequired[player.pos]) {
+  const assignPlayerToTeam = (teamIndex, player) => {
+    const team = teams[teamIndex];
+    if(team.roster[player.pos].length < startersRequired[player.pos]){
       team.roster[player.pos].push(player);
-    } else if ((player.pos==="RB"||player.pos==="WR"||player.pos==="TE") && team.roster.FLEX.length < startersRequired.FLEX) {
+    } else if((player.pos==="RB"||player.pos==="WR"||player.pos==="TE") && team.roster.FLEX.length<startersRequired.FLEX){
       team.roster.FLEX.push(player);
-    } else if (team.roster[player.pos].length < maxPlayers[player.pos]) {
+    } else if(team.roster[player.pos].length<maxPlayers[player.pos]){
       team.roster[player.pos].push(player);
     } else {
       team.roster.BE.push(player);
     }
-
-    const updatedTeams = [...teams];
-    updatedTeams[pickTeamIndex] = team;
-    setTeams(updatedTeams);
-    setCurrentPickIndex(currentPickIndex + 1);
-    setSearchQuery("");
+    player.drafted = true;
+    const newTeams = [...teams];
+    newTeams[teamIndex]=team;
+    setTeams(newTeams);
   };
 
-  const makePick = () => {
-    if (currentPickIndex >= draftOrder.length) return;
-
+  const draftPlayer = (player) => {
     const pickTeamIndex = draftOrder[currentPickIndex];
-
-    // If manual mode and not user team, skip auto pick
-    if (draftMode === "manual" && pickTeamIndex !== userPickPosition) {
-      setCurrentPickIndex(currentPickIndex + 1);
-      return;
-    }
-
-    const team = teams[pickTeamIndex];
-    const teamNeeds = {};
-    for (let pos of ["QB","RB","WR","TE","FLEX","DST","K"]) {
-      teamNeeds[pos] = Math.max(0, startersRequired[pos]-team.roster[pos].length);
-    }
-
-    let pick = suggestPick(players, teamNeeds);
-    if (!pick) return;
-    handlePlayerPick(pick);
+    assignPlayerToTeam(pickTeamIndex, player);
+    setCurrentPickIndex(currentPickIndex+1);
   };
 
-  const currentTeam = teams[draftOrder[currentPickIndex]] ?? null;
-  const teamNeeds = currentTeam ? {
-    QB: Math.max(0, startersRequired.QB-currentTeam.roster.QB.length),
-    RB: Math.max(0, startersRequired.RB-currentTeam.roster.RB.length),
-    WR: Math.max(0, startersRequired.WR-currentTeam.roster.WR.length),
-    TE: Math.max(0, startersRequired.TE-currentTeam.roster.TE.length),
-    FLEX: Math.max(0, startersRequired.FLEX-currentTeam.roster.FLEX.length),
-    DST: Math.max(0, startersRequired.DST-currentTeam.roster.DST.length),
-    K: Math.max(0, startersRequired.K-currentTeam.roster.K.length)
-  } : {};
-  const suggestedPick = currentTeam ? suggestPick(players, teamNeeds) : null;
-  const draftComplete = currentPickIndex >= draftOrder.length;
+  const draftNext = () => {
+    if(currentPickIndex>=draftOrder.length) return;
+    const pickTeamIndex = draftOrder[currentPickIndex];
+    const isUser = pickTeamIndex===userPickPosition;
+    if(!isUser && !manualOtherTeams){
+      const player = suggestPick(teams[pickTeamIndex]);
+      draftPlayer(player);
+    }
+  };
+
+  React.useEffect(()=>{
+    if(draftStarted && currentPickIndex<draftOrder.length){
+      draftNext();
+    }
+  },[currentPickIndex,draftStarted]);
+
+  const draftComplete = currentPickIndex>=draftOrder.length;
+  const currentTeam = draftOrder[currentPickIndex]!=null?teams[draftOrder[currentPickIndex]]:null;
+  const suggestedPickPlayer = currentTeam?suggestPick(currentTeam):null;
 
   const gradeTeam = (team) => {
-    if(!team || !team.roster) return 0;
+    if(!team||!team.roster) return 0;
     const totalADP = Object.values(team.roster).flat().reduce((sum,p)=>sum+p.adp,0);
     const posScore = Object.entries(team.roster).reduce((sum,[pos,arr])=>{
-      let req = startersRequired[pos] || 0;
-      return sum + Math.min(arr.length/req,1);
+      let req = startersRequired[pos]||0;
+      return sum+Math.min(arr.length/req,1);
     },0);
     return ((posScore/6)*50 + ((teams.length*15-totalADP)/(teams.length*15))*50).toFixed(1);
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-4">Fantasy Draft Simulator - Full Roster</h1>
+    <div className="max-w-6xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-4">Fantasy Draft Simulator</h1>
 
       {!draftStarted && (
-        <div className="mb-6">
-          <label className="mr-2"># of Teams:</label>
-          <select value={numTeams} onChange={e=>setNumTeams(Number(e.target.value))} className="border rounded px-2 py-1">
-            <option value={8}>8</option>
-            <option value={10}>10</option>
-            <option value={12}>12</option>
-          </select>
-          <label className="ml-4 mr-2">Your Draft Position:</label>
-          <select value={userPickPosition} onChange={e=>setUserPickPosition(Number(e.target.value))} className="border rounded px-2 py-1">
-            {Array.from({length:numTeams},(_,i)=><option key={i} value={i}>{i+1}</option>)}
-          </select>
-
-          <div className="mt-2">
-            <span className="mr-2 font-semibold">Draft Mode:</span>
-            <label className="mr-2">
-              <input type="radio" value="auto" checked={draftMode==="auto"} onChange={e=>setDraftMode(e.target.value)} /> Auto
-            </label>
-            <label>
-              <input type="radio" value="manual" checked={draftMode==="manual"} onChange={e=>setDraftMode(e.target.value)} /> Manual
-            </label>
+        <div className="mb-6 space-y-4">
+          <div>
+            <label className="mr-2"># of Teams:</label>
+            <select value={numTeams} onChange={e=>setNumTeams(Number(e.target.value))} className="border rounded px-2 py-1">
+              <option value={8}>8</option>
+              <option value={10}>10</option>
+              <option value={12}>12</option>
+            </select>
           </div>
-
-          <button onClick={fetchADP} className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Load Players</button>
-          <button onClick={startDraft} className="ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Start Draft</button>
-          {loading && <span className="ml-2">Loading...</span>}
-          {error && <p className="text-red-500 mt-2">{error}</p>}
+          <div>
+            <label className="mr-2">Your Draft Position:</label>
+            <select value={userPickPosition} onChange={e=>setUserPickPosition(Number(e.target.value))} className="border rounded px-2 py-1">
+              {Array.from({length:numTeams},(_,i)=><option key={i} value={i}>{i+1}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mr-2">Pick Mode for Other Teams:</label>
+            <select value={manualOtherTeams} onChange={e=>setManualOtherTeams(e.target.value==="true")} className="border rounded px-2 py-1">
+              <option value={false}>Auto Pick</option>
+              <option value={true}>Manual Pick</option>
+            </select>
+          </div>
+          <div>
+            <button onClick={fetchADP} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 mr-2">Load Players</button>
+            <button onClick={startDraft} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Start Draft</button>
+            {loading && <span className="ml-2">Loading...</span>}
+            {error && <p className="text-red-500 mt-2">{error}</p>}
+          </div>
         </div>
       )}
 
       {draftStarted && !draftComplete && currentTeam && (
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold">Current Pick: {currentTeam.name}</h2>
-          <p>Suggested Pick: {suggestedPick ? `${suggestedPick.name} (${suggestedPick.pos || "Unknown"})` : "No pick available"}</p>
+        <div className="mb-6 space-y-4">
+          <h2 className="text-xl font-bold">Current Pick: {currentTeam.name}</h2>
+          <p>Suggested Pick: {suggestedPickPlayer ? `${suggestedPickPlayer.name} (${suggestedPickPlayer.pos}) | ADP: ${suggestedPickPlayer.adp}` : "No pick available"}</p>
+          <button onClick={()=>draftPlayer(suggestedPickPlayer)} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 mb-2">Draft Suggested Pick</button>
 
           <input
             type="text"
             placeholder="Search player..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="border rounded px-2 py-1 w-full mt-2"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="border rounded px-2 py-1 w-full mb-2"
           />
-          {searchQuery && (
-            <ul className="border rounded bg-white mt-1 max-h-48 overflow-auto">
-              {players
-                .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                .slice(0, 10)
-                .map(p => {
-                  const isSuggested = suggestedPick && p.name === suggestedPick.name;
-                  const isDrafted = p.drafted;
-                  return (
-                    <li
-                      key={p.name}
-                      onClick={() => !isDrafted && handlePlayerPick(p)}
-                      className={`px-2 py-1 cursor-pointer ${
-                        isDrafted ? "text-gray-400 cursor-not-allowed" : "hover:bg-gray-200"
-                      } ${isSuggested ? "bg-yellow-100 font-semibold" : ""}`}
-                    >
-                      {p.name} ({p.pos})
-                    </li>
-                  );
-                })}
-            </ul>
-          )}
-
-          <button onClick={makePick} className="mt-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Draft Suggested Pick</button>
+          <select
+            onChange={(e) => {
+              const player = players.find(p => p.name===e.target.value);
+              if(player) draftPlayer(player);
+              setSearchTerm("");
+            }}
+            className="border rounded p-1 w-full"
+          >
+            <option value="">--Select Player--</option>
+            {players.filter(p=>!p.drafted && p.name.toLowerCase().includes(searchTerm.toLowerCase())).map((p,i)=>(
+              <option key={i} value={p.name}>{p.name} ({p.pos}) | ADP: {p.adp}</option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -244,53 +226,36 @@ function App() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {teams.map((team,i)=>(
             <div key={i} className={`bg-white p-4 rounded-xl shadow ${i===userPickPosition?'border-2 border-blue-500':''}`}>
-              <h3 className="font-bold mb-2">{team?.name || `Team ${i+1}`}</h3>
-              {Object.entries(team?.roster||{}).map(([pos,arr])=>{
-                const isFLEX=pos==='FLEX';
-                return <p key={pos} className={isFLEX?'text-green-600 font-semibold':''}><strong>{pos}:</strong> {arr.map(p=>p.name).join(", ")}</p>
+              <h3 className="font-bold mb-2">{team.name}</h3>
+              {["QB","RB","WR","TE","FLEX","DST","K","BE"].map(pos=>{
+                const arr = team.roster[pos]||[];
+                let color = "";
+                if(pos==="FLEX") color="text-green-600 font-semibold";
+                else if(pos==="BE") color="text-gray-500 italic";
+                return (
+                  <div key={pos} className={`${color} mb-1`}>
+                    <strong>{pos}:</strong> {arr.map(p=>`${p.name} (ADP: ${p.adp})`).join(", ")}
+                  </div>
+                )
               })}
+              {draftComplete && <p className="mt-2 font-bold">Grade: {gradeTeam(team)}</p>}
             </div>
           ))}
         </div>
       )}
 
-      {draftComplete && teams[userPickPosition] && (
+      {draftComplete && (
         <div className="bg-green-100 p-4 rounded-xl">
           <h2 className="text-xl font-bold mb-2">Draft Complete!</h2>
-          <p>Your Team Grade: {gradeTeam(teams[userPickPosition])} / 100</p>
-          <p>Grades for Other Teams:</p>
-          <ul>
-            {teams.map((t,i)=>(
-              <li key={i}>{t?.name || `Team ${i+1}`}: {gradeTeam(t)}{i===userPickPosition?' (You)':''}</li>
-            ))}
-          </ul>
+          <p>Your Team is ready!</p>
         </div>
       )}
 
-      {draftStarted && (
-        <div className="bg-gray-50 p-4 rounded-xl mt-4">
-          <h2 className="font-semibold mb-2">Draft History</h2>
-          <ol className="list-decimal list-inside max-h-64 overflow-auto">
-            {draftOrder.slice(0,currentPickIndex).map((tIndex,idx)=>{
-              const t = teams[tIndex];
-              const pick = Object.values(t?.roster||{}).flat().slice(-1)[0];
-              const isFLEX = Object.entries(t?.roster||{}).some(([pos,arr])=>arr.includes(pick) && pos==='FLEX');
-              return (
-                <li key={idx} className={`${tIndex===userPickPosition?'font-bold text-blue-600':''} ${isFLEX?'text-green-600 font-semibold':''}`}>
-                  {t?.name || `Team ${tIndex+1}`}: {pick ? `${pick.name} (${pick.pos || "Unknown"})` : 'No pick'}
-                </li>
-              )
-            })}
-          </ol>
-        </div>
-      )}
     </div>
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
-
 </body>
 </html>
