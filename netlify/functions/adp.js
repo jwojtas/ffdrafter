@@ -1,35 +1,59 @@
+import fetch from "node-fetch";
+import { XMLParser } from "fast-xml-parser";
+
 export async function handler(event, context) {
   try {
-    // Fetch all NFL players from Sleeper
-    const res = await fetch("https://api.sleeper.app/v1/players/nfl");
-    if (!res.ok) {
-      return {
-        statusCode: res.status,
-        body: JSON.stringify({ error: "Failed to fetch Sleeper players" }),
-      };
+    let accessToken = process.env.YAHOO_ACCESS_TOKEN;
+
+    // If missing/expired → refresh
+    if (!accessToken) {
+      const refreshRes = await fetch("https://api.login.yahoo.com/oauth2/get_token", {
+        method: "POST",
+        headers: {
+          Authorization:
+            "Basic " +
+            Buffer.from(
+              process.env.YAHOO_CLIENT_ID + ":" + process.env.YAHOO_CLIENT_SECRET
+            ).toString("base64"),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: process.env.YAHOO_REFRESH_TOKEN,
+        }),
+      });
+      const refreshData = await refreshRes.json();
+      if (!refreshRes.ok) {
+        return { statusCode: refreshRes.status, body: JSON.stringify(refreshData) };
+      }
+      accessToken = refreshData.access_token;
     }
 
-    const data = await res.json();
+    // Fetch players
+    const leagueKey = process.env.YAHOO_LEAGUE_KEY;
+    const res = await fetch(
+      `https://fantasysports.yahooapis.com/fantasy/v2/league/${leagueKey}/players`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
 
-    // Map Sleeper data into your draft pool format
-    const mapped = Object.values(data)
-      .map((p) => ({
-        name: p.full_name || p.first_name + " " + p.last_name,
-        pos: normalizePos(p.position), // We'll normalize to QB/RB/WR/TE/DST/PK
-        adp: p.fantasy_positions && p.fantasy_positions.length > 0 ? p.rank_ecr : 999,
-        drafted: false,
-      }))
-      .filter(
-        (p) => ["QB", "RB", "WR", "TE", "DST", "PK"].includes(p.pos)
-      );
+    if (!res.ok) {
+      const errText = await res.text();
+      return { statusCode: res.status, body: JSON.stringify({ error: errText }) };
+    }
 
-    // Deduplicate by name (Sleeper sometimes has multiple entries)
-    const seen = new Set();
-    const players = mapped.filter((p) => {
-      if (!p.name || seen.has(p.name)) return false;
-      seen.add(p.name);
-      return true;
-    });
+    const xml = await res.text();
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const json = parser.parse(xml);
+
+    const rawPlayers = json.fantasy_content?.league?.players?.player || [];
+    const players = rawPlayers.map((p) => ({
+      name: p.name?.full || `${p.name?.first} ${p.name?.last}`,
+      pos: normalizePos(p.display_position),
+      adp: Number(p.adp_average) || 999,
+      drafted: false,
+    }));
 
     return {
       statusCode: 200,
@@ -37,17 +61,13 @@ export async function handler(event, context) {
       body: JSON.stringify({ players }),
     };
   } catch (err) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message }),
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 }
 
-// helper to standardize positions
 function normalizePos(pos) {
   if (!pos) return "UNK";
-  if (pos === "PK" || pos === "K") return "PK";
+  if (pos === "K" || pos === "PK") return "PK";
   if (pos === "DEF" || pos === "DST") return "DST";
   return pos.toUpperCase();
 }
