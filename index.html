@@ -1,618 +1,78 @@
-import React, { useMemo, useState } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fantasy Draft Recommender</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div id="root"></div>
 
-// Fantasy Football Draft Pick Recommender — single-file React app
-// Updated: Adds live ADP import from FantasyFootballCalculator's public ADP API
-// • Fetches top ADP players (standard/12-team/2025) and loads top 200 players + defenses
-// • If the remote API fails (CORS or network), the app falls back to the built-in SAMPLE_PLAYERS
-// • All data remains client-side
+  <script type="text/babel">
 
-// ------------------------------ Types & Constants ------------------------------
-const POSITIONS = ["QB", "RB", "WR", "TE", "DST", "K"] as const;
+    const samplePlayers = [
+      { name: "Justin Jefferson", pos: "WR", team: "MIN", adp: 1.02 },
+      { name: "Christian McCaffrey", pos: "RB", team: "SF", adp: 1.05 },
+      { name: "Josh Allen", pos: "QB", team: "BUF", adp: 25.3 },
+      { name: "49ers D/ST", pos: "DST", team: "SF", adp: 150.0 }
+    ];
 
-// ------------------------------ Sample Data (fallback) ------------------------------
-const SAMPLE_PLAYERS = [
-  { name: "Christian McCaffrey", team: "SF", pos: "RB", bye: 9, adp: 1.5, ecr: 1.2, projStd: 250, projHalf: 290, projPpr: 330, risk: 0.10 },
-  { name: "CeeDee Lamb", team: "DAL", pos: "WR", bye: 7, adp: 3.0, ecr: 2.8, projStd: 210, projHalf: 265, projPpr: 315, risk: 0.12 },
-  { name: "Tyreek Hill", team: "MIA", pos: "WR", bye: 6, adp: 4.0, ecr: 3.2, projStd: 205, projHalf: 260, projPpr: 310, risk: 0.18 },
-  { name: "Bijan Robinson", team: "ATL", pos: "RB", bye: 12, adp: 6.5, ecr: 6.0, projStd: 200, projHalf: 245, projPpr: 285, risk: 0.22 },
-  { name: "Ja'Marr Chase", team: "CIN", pos: "WR", bye: 12, adp: 5.5, ecr: 5.0, projStd: 198, projHalf: 250, projPpr: 300, risk: 0.20 },
-  { name: "Justin Jefferson", team: "MIN", pos: "WR", bye: 6, adp: 7.2, ecr: 7.0, projStd: 195, projHalf: 248, projPpr: 298, risk: 0.18 },
-  { name: "Breece Hall", team: "NYJ", pos: "RB", bye: 12, adp: 9.5, ecr: 9.0, projStd: 190, projHalf: 235, projPpr: 275, risk: 0.22 },
-  { name: "Amon-Ra St. Brown", team: "DET", pos: "WR", bye: 5, adp: 10.0, ecr: 10.0, projStd: 188, projHalf: 240, projPpr: 292, risk: 0.15 },
-  { name: "A.J. Brown", team: "PHI", pos: "WR", bye: 10, adp: 11.0, ecr: 11.0, projStd: 185, projHalf: 237, projPpr: 287, risk: 0.17 },
-  { name: "Jalen Hurts", team: "PHI", pos: "QB", bye: 10, adp: 22.0, ecr: 20.0, projStd: 330, projHalf: 330, projPpr: 330, risk: 0.18 },
-  { name: "Josh Allen", team: "BUF", pos: "QB", bye: 12, adp: 24.0, ecr: 22.0, projStd: 325, projHalf: 325, projPpr: 325, risk: 0.18 },
-  { name: "Travis Kelce", team: "KC", pos: "TE", bye: 6, adp: 28.0, ecr: 25.0, projStd: 180, projHalf: 230, projPpr: 280, risk: 0.22 },
-  { name: "Sam LaPorta", team: "DET", pos: "TE", bye: 5, adp: 35.0, ecr: 30.0, projStd: 160, projHalf: 205, projPpr: 255, risk: 0.26 },
-  { name: "Puka Nacua", team: "LAR", pos: "WR", bye: 10, adp: 15.0, ecr: 14.0, projStd: 186, projHalf: 238, projPpr: 288, risk: 0.23 },
-  { name: "Garrett Wilson", team: "NYJ", pos: "WR", bye: 12, adp: 16.0, ecr: 15.5, projStd: 180, projHalf: 232, projPpr: 282, risk: 0.24 },
-  { name: "Saquon Barkley", team: "PHI", pos: "RB", bye: 10, adp: 18.0, ecr: 17.0, projStd: 182, projHalf: 225, projPpr: 265, risk: 0.25 },
-  { name: "Jonathan Taylor", team: "IND", pos: "RB", bye: 14, adp: 19.0, ecr: 18.0, projStd: 180, projHalf: 222, projPpr: 260, risk: 0.24 },
-  { name: "Aidan O'Connell", team: "LV", pos: "QB", bye: 10, adp: 220.0, ecr: 250.0, projStd: 160, projHalf: 160, projPpr: 160, risk: 0.60 },
-  { name: "Rams D/ST", team: "LAR", pos: "DST", bye: 10, adp: 120.0, ecr: 115.0, projStd: 120, projHalf: 120, projPpr: 120, risk: 0.35 },
-  { name: "Evan McPherson", team: "CIN", pos: "K", bye: 7, adp: 140.0, ecr: 138.0, projStd: 135, projHalf: 135, projPpr: 135, risk: 0.20 },
-].map((p, i) => ({ id: i + 1, ...p }));
+    function App() {
+      const [players, setPlayers] = React.useState(samplePlayers);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState("");
 
-// ------------------------------ Helpers ------------------------------
-function clsx(...xs: Array<string | boolean | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
-}
+      const fetchADP = async () => {
+        setLoading(true);
+        setError("");
+        try {
+          const res = await fetch("/.netlify/functions/adp");
+          if (!res.ok) throw new Error("Fetch failed");
+          const data = await res.json();
+          const mapped = data.players
+            .slice(0,200)
+            .map(p => ({
+              name: p.name,
+              pos: p.position,
+              team: p.team,
+              adp: p.adp
+            }));
+          setPlayers(mapped);
+        } catch (e) {
+          console.error(e);
+          setError("Could not fetch ADP from Netlify function. Using sample data.");
+          setPlayers(samplePlayers);
+        }
+        setLoading(false);
+      };
 
-function snakeOverallPick(round: number, slot: number, teams: number) {
-  if (round % 2 === 1) return (round - 1) * teams + slot;
-  return (round - 1) * teams + (teams - slot + 1);
-}
-
-function nextOwnPickOverall(round: number, slot: number, teams: number) {
-  const nextRound = round + 1;
-  return snakeOverallPick(nextRound, slot, teams);
-}
-
-function logistic(x: number) {
-  return 1 / (1 + Math.exp(-x));
-}
-
-function availabilityChance(adp: number, futurePickOverall: number, spread = 6) {
-  const z = (futurePickOverall - adp) / spread;
-  return logistic(z);
-}
-
-function formatPct(x: number) {
-  return `${Math.round(x * 100)}%`;
-}
-
-function posColor(pos: string) {
-  switch (pos) {
-    case "RB":
-      return "bg-emerald-600/15 text-emerald-700 ring-1 ring-emerald-600/20";
-    case "WR":
-      return "bg-sky-600/15 text-sky-700 ring-1 ring-sky-600/20";
-    case "QB":
-      return "bg-amber-500/15 text-amber-700 ring-1 ring-amber-500/20";
-    case "TE":
-      return "bg-violet-600/15 text-violet-700 ring-1 ring-violet-600/20";
-    case "DST":
-      return "bg-slate-500/15 text-slate-700 ring-1 ring-slate-500/20";
-    case "K":
-      return "bg-rose-500/15 text-rose-700 ring-1 ring-rose-500/20";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
-}
-
-// ------------------------------ Main Component ------------------------------
-export default function FantasyDraftRecommender() {
-  // League settings
-  const [teams, setTeams] = useState(12);
-  const [slot, setSlot] = useState(6);
-  const [round, setRound] = useState(1);
-  const [scoring, setScoring] = useState<"STD" | "HALF" | "PPR">("PPR");
-
-  // Roster configuration
-  const [starters, setStarters] = useState({ QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 });
-
-  // Player pool and draft state
-  const [pool, setPool] = useState(SAMPLE_PLAYERS);
-  const [myTeam, setMyTeam] = useState<typeof SAMPLE_PLAYERS>([]);
-  const [drafted, setDrafted] = useState<number[]>([]);
-
-  // UI state
-  const [posFilter, setPosFilter] = useState<string>("ALL");
-  const [query, setQuery] = useState("");
-  const [hideDrafted, setHideDrafted] = useState(true);
-  const [showAdvanced, setShowAdvanced] = useState(true);
-  const [byeGuard, setByeGuard] = useState(false);
-  const [loadingAdp, setLoadingAdp] = useState(false);
-  const [lastAdpSource, setLastAdpSource] = useState<string | null>(null);
-
-  const currentOverall = useMemo(() => snakeOverallPick(round, slot, teams), [round, slot, teams]);
-  const nextOverall = useMemo(() => nextOwnPickOverall(round, slot, teams), [round, slot, teams]);
-
-  function proj(p: (typeof SAMPLE_PLAYERS)[number]) {
-    if (scoring === "PPR") return p.projPpr ?? p.proj ?? 0;
-    if (scoring === "HALF") return p.projHalf ?? p.proj ?? 0;
-    return p.projStd ?? p.proj ?? 0;
-  }
-
-  // ---- ADP fetcher (FantasyFootballCalculator public REST API)
-  async function fetchADPFromFFC({ position = "all", teamsCount = 12, year = 2025 } = {}) {
-    setLoadingAdp(true);
-    setLastAdpSource(null);
-    try {
-      // This is a public JSON endpoint discovered on the site's "JSON" link
-      const res = await fetch("/.netlify/functions/adp");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (!data || !Array.isArray(data.players)) throw new Error("Unexpected ADP format");
-
-      // Map incoming players into our pool shape and keep top 200 players + defenses
-      const mapped = (data.players as any[])
-        .slice(0, 400) // take a larger slice because we will filter to include defenses too
-        .map((p, i) => {
-          // map positions: API may use 'DEF' or 'PK' — convert to our POSITIONS
-          const apiPos = String(p.position ?? p.pos ?? "").toUpperCase();
-          let pos = apiPos;
-          if (apiPos === "DEF" || apiPos === "D/ST") pos = "DST";
-          if (apiPos === "PK") pos = "K";
-
-          return {
-            id: Number(p.player_id ?? i + 1),
-            name: String(p.name ?? p.player ?? `Player ${i + 1}`),
-            team: String(p.team ?? "FA").toUpperCase(),
-            pos,
-            bye: Number(p.bye ?? 0),
-            adp: Number(p.adp ?? p.adp_formatted ?? (i + 1)),
-            ecr: Number(p.ecr ?? p.rank ?? i + 1) || 0,
-            // No projections in ADP feed — keep placeholders so UI doesn't break
-            projStd: Number(p.projStd ?? p.proj ?? 160),
-            projHalf: Number(p.projHalf ?? p.half ?? p.proj ?? 180),
-            projPpr: Number(p.projPpr ?? p.ppr ?? p.proj ?? 200),
-            risk: Number(p.risk ?? 0.22),
-          };
-        })
-        // prefer starters (QB/RB/WR/TE) plus include DEF/PK if present
-        .filter((p) => POSITIONS.includes(p.pos) || ["DST", "K"].includes(p.pos))
-        // ensure DST and K use our position tokens
-        .map((p) => ({ ...p, pos: p.pos === "DST" || p.pos === "K" ? p.pos : p.pos }))
-        // reduce duplicates by player id/name
-        .reduce((acc: any[], cur) => {
-          if (!acc.find((x) => x.id === cur.id || x.name === cur.name)) acc.push(cur);
-          return acc;
-        }, [] as any[])
-        .slice(0, 200);
-
-      // If fewer than 200 returned, pad with sample players to avoid empty UI.
-      const final = mapped.length >= 200 ? mapped : [...mapped, ...SAMPLE_PLAYERS.slice(0, Math.max(0, 200 - mapped.length))];
-
-      // assign internal incremental ids if collisions
-      const withIds = final.map((p, i) => ({ ...p, id: i + 1 }));
-
-      setPool(withIds as any);
-      setMyTeam([]);
-      setDrafted([]);
-      setLastAdpSource(url);
-    } catch (e: any) {
-      console.error("ADP fetch failed:", e);
-      alert("Failed to fetch ADP from FantasyFootballCalculator. Falling back to sample data. See console for details.");
-      setPool(SAMPLE_PLAYERS);
-    } finally {
-      setLoadingAdp(false);
-    }
-  }
-
-  // ------------------------------ Rest of recommender logic (unchanged) ------------------------------
-  const needs = useMemo(() => {
-    const counts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
-    myTeam.forEach((p) => counts[p.pos]++);
-    const out: Record<string, number> = {} as any;
-    for (const pos of POSITIONS) {
-      const target = starters[pos as keyof typeof starters] ?? 0;
-      out[pos] = Math.max(0, target - (counts[pos] ?? 0));
-    }
-    const flexUsed = Math.max(0, myTeam.filter((p) => ["RB", "WR", "TE"].includes(p.pos)).length -
-      ((starters.RB ?? 0) + (starters.WR ?? 0) + (starters.TE ?? 0))
-    );
-    const flexRem = Math.max(0, (starters.FLEX ?? 0) - flexUsed);
-    return { ...out, FLEX: flexRem };
-  }, [myTeam, starters]);
-
-  const baselines = useMemo(() => {
-    const baselines: Record<string, number> = {} as any;
-    for (const pos of POSITIONS) {
-      const countNeeded = teams * (starters[pos as keyof typeof starters] ?? 0);
-      const candidates = pool
-        .filter((p) => p.pos === pos && !drafted.includes(p.id) && !myTeam.some((m) => m.id === p.id))
-        .sort((a, b) => proj(b) - proj(a));
-      const baselinePlayer = candidates[Math.max(0, Math.min(candidates.length - 1, countNeeded - 1))];
-      baselines[pos] = baselinePlayer ? proj(baselinePlayer) : 0;
-    }
-    return baselines;
-  }, [pool, drafted, myTeam, teams, starters, scoring]);
-
-  function stackBonus(p: (typeof SAMPLE_PLAYERS)[number]) {
-    const hasStackMate = myTeam.some((m) => m.team === p.team && ["QB", "WR", "RB", "TE"].includes(m.pos));
-    return hasStackMate ? 1.02 : 1.0;
-  }
-
-  function byePenalty(p: (typeof SAMPLE_PLAYERS)[number]) {
-    if (!byeGuard) return 1.0;
-    const sameWeek = myTeam.filter((m) => m.bye === p.bye && m.pos === p.pos).length;
-    const cap = (starters[p.pos as keyof typeof starters] ?? 0) + (p.pos === "RB" || p.pos === "WR" || p.pos === "TE" ? (starters.FLEX ?? 0) : 0);
-    return sameWeek >= cap ? 0.92 : 1.0;
-  }
-
-  function needMultiplier(p: (typeof SAMPLE_PLAYERS)[number]) {
-    const baseNeed = needs[p.pos] ?? 0;
-    const flexNeed = ["RB", "WR", "TE"].includes(p.pos) ? needs.FLEX ?? 0 : 0;
-    const weight = 1 + 0.08 * baseNeed + 0.04 * Math.min(1, flexNeed);
-    return weight;
-  }
-
-  const recommendations = useMemo(() => {
-    const futurePick = nextOverall;
-
-    return pool
-      .filter((p) => !drafted.includes(p.id) && !myTeam.some((m) => m.id === p.id))
-      .filter((p) => (posFilter === "ALL" ? true : p.pos === posFilter))
-      .filter((p) => (query ? p.name.toLowerCase().includes(query.toLowerCase()) : true))
-      .map((p) => {
-        const pProj = proj(p);
-        const baseline = baselines[p.pos] ?? 0;
-        const vorp = pProj - baseline;
-        const riskPenalty = 1 - Math.min(0.4, p.risk * 0.6);
-        const stack = stackBonus(p);
-        const byeMult = byePenalty(p);
-        const needMult = needMultiplier(p);
-        const reach = currentOverall - p.adp;
-        const reachAdj = 1 + Math.max(-0.25, Math.min(0.25, reach / 40));
-        const availNext = availabilityChance(p.adp, futurePick);
-
-        const score = (vorp * needMult * stack * byeMult * riskPenalty) * reachAdj;
-
-        return {
-          ...p,
-          proj: pProj,
-          baseline,
-          vorp,
-          score,
-          reach,
-          availNext,
-        };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 60);
-  }, [pool, drafted, myTeam, posFilter, query, baselines, scoring, currentOverall, nextOverall, needs, byeGuard]);
-
-  function draftPlayer(p: (typeof SAMPLE_PLAYERS)[number]) {
-    setMyTeam((t) => [...t, p]);
-  }
-
-  function markDrafted(p: (typeof SAMPLE_PLAYERS)[number]) {
-    setDrafted((d) => [...new Set([...d, p.id])]);
-  }
-
-  function undoLast() {
-    setMyTeam((t) => t.slice(0, -1));
-  }
-
-  function resetDraft() {
-    setMyTeam([]);
-    setDrafted([]);
-    setRound(1);
-  }
-
-  function replacePoolFromJSON(jsonStr: string) {
-    try {
-      const arr = JSON.parse(jsonStr);
-      if (!Array.isArray(arr)) return alert("Expected a JSON array of players.");
-      const mapped = arr.map((p: any, i: number) => ({
-        id: i + 1,
-        name: String(p.name ?? p.player ?? `Player ${i + 1}`),
-        team: String(p.team ?? p.tm ?? "FA").toUpperCase(),
-        pos: String(p.pos ?? p.position ?? "WR").toUpperCase(),
-        bye: Number(p.bye ?? p.bye_week ?? 0),
-        adp: Number(p.adp ?? p.ADP ?? (i + 1)),
-        ecr: Number(p.ecr ?? p.rank ?? i + 1),
-        projStd: Number(p.projStd ?? p.std ?? p.proj ?? 150),
-        projHalf: Number(p.projHalf ?? p.half ?? p.proj ?? 180),
-        projPpr: Number(p.projPpr ?? p.ppr ?? p.proj ?? 210),
-        risk: Number(p.risk ?? 0.2),
-      }));
-      setPool(mapped);
-      setMyTeam([]);
-      setDrafted([]);
-      alert(`Loaded ${mapped.length} players.`);
-    } catch (e: any) {
-      alert("Failed to parse JSON: " + e.message);
-    }
-  }
-
-  const tiers = useMemo(() => {
-    if (recommendations.length === 0) return [] as typeof recommendations[];
-    const groups: typeof recommendations[] = [] as any;
-    let current: typeof recommendations = [] as any;
-    let prevScore = recommendations[0].score;
-    for (const p of recommendations) {
-      if (prevScore - p.score > 10) {
-        groups.push(current);
-        current = [] as any;
-      }
-      current.push(p);
-      prevScore = p.score;
-    }
-    if (current.length) groups.push(current);
-    return groups;
-  }, [recommendations]);
-
-  const rosterCountByPos = useMemo(() => {
-    const counts: Record<string, number> = {} as any;
-    for (const pos of POSITIONS) counts[pos] = 0;
-    myTeam.forEach((p) => (counts[p.pos] = (counts[p.pos] || 0) + 1));
-    return counts;
-  }, [myTeam]);
-
-  const sleepers = useMemo(() => {
-    return recommendations
-      .filter((p) => p.ecr - p.adp < -5)
-      .slice(0, 8);
-  }, [recommendations]);
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-800">
-      <header className="sticky top-0 z-20 backdrop-blur bg-white/70 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="text-2xl font-bold tracking-tight">Fantasy Draft Recommender</div>
-          <div className="ml-auto flex items-center gap-2 text-sm">
-            <button
-              className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100"
-              onClick={() => setShowAdvanced((v) => !v)}
-            >
-              {showAdvanced ? "Hide" : "Show"} Advanced
-            </button>
-            <button
-              className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100"
-              onClick={resetDraft}
-            >
-              Reset
-            </button>
-          </div>
+      return (
+        <div className="max-w-4xl mx-auto p-6">
+          <h1 className="text-2xl font-bold mb-4">Fantasy Draft Recommender</h1>
+          <button 
+            onClick={fetchADP}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700">
+            {loading ? "Fetching..." : "Fetch Top 200 ADP"}
+          </button>
+          {error && <p className="text-red-500 mt-2">{error}</p>}
+          <ul className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {players.map((p,i) => (
+              <li key={i} className="p-4 bg-white rounded-xl shadow flex justify-between">
+                <span>{p.name} ({p.pos} - {p.team})</span>
+                <span className="text-gray-600">ADP: {p.adp}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-      </header>
+      );
+    }
 
-      <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Controls */}
-        <section className="lg:col-span-4 space-y-6">
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <h2 className="font-semibold mb-3">League & Draft</h2>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <label className="space-y-1">
-                <div className="text-slate-500">Teams</div>
-                <input type="number" min={4} max={20} value={teams}
-                       onChange={(e) => setTeams(Number(e.target.value) || 12)}
-                       className="w-full px-3 py-2 rounded-xl border border-slate-300" />
-              </label>
-              <label className="space-y-1">
-                <div className="text-slate-500">Your Slot</div>
-                <input type="number" min={1} max={teams} value={slot}
-                       onChange={(e) => setSlot(Math.min(teams, Math.max(1, Number(e.target.value) || 1)))}
-                       className="w-full px-3 py-2 rounded-xl border border-slate-300" />
-              </label>
-              <label className="space-y-1">
-                <div className="text-slate-500">Round</div>
-                <input type="number" min={1} max={30} value={round}
-                       onChange={(e) => setRound(Math.max(1, Number(e.target.value) || 1))}
-                       className="w-full px-3 py-2 rounded-xl border border-slate-300" />
-              </label>
-              <label className="space-y-1">
-                <div className="text-slate-500">Scoring</div>
-                <select value={scoring} onChange={(e) => setScoring(e.target.value as any)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-300">
-                  <option value="STD">Standard</option>
-                  <option value="HALF">Half PPR</option>
-                  <option value="PPR">Full PPR</option>
-                </select>
-              </label>
-            </div>
-            <div className="mt-3 text-xs text-slate-500">
-              <div>Current Overall: <span className="font-semibold text-slate-700">{currentOverall}</span></div>
-              <div>Your Next Pick Overall: <span className="font-semibold text-slate-700">{nextOverall}</span></div>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <h2 className="font-semibold mb-3">Starters (for value baselines)</h2>
-            <div className="grid grid-cols-3 gap-3 text-sm">
-              {(["QB", "RB", "WR", "TE", "DST", "K"] as const).map((pos) => (
-                <label key={pos} className="space-y-1">
-                  <div className="text-slate-500">{pos}</div>
-                  <input type="number" min={0} max={pos === "QB" ? 2 : 4}
-                    value={starters[pos as keyof typeof starters] as number}
-                    onChange={(e) => setStarters({ ...starters, [pos]: Math.max(0, Number(e.target.value) || 0) })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300" />
-                </label>
-              ))}
-              <label className="space-y-1 col-span-3">
-                <div className="text-slate-500">FLEX (RB/WR/TE)</div>
-                <input type="number" min={0} max={3} value={starters.FLEX}
-                  onChange={(e) => setStarters({ ...starters, FLEX: Math.max(0, Number(e.target.value) || 0) })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300" />
-              </label>
-            </div>
-            <div className="mt-3 flex items-center gap-3 text-sm">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={byeGuard} onChange={(e) => setByeGuard(e.target.checked)} />
-                <span>Bye week guard</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <h2 className="font-semibold mb-3">Filters</h2>
-            <div className="flex flex-wrap gap-2">
-              {(["ALL", ...POSITIONS] as const).map((p) => (
-                <button key={p}
-                        className={clsx("px-3 py-1.5 rounded-xl border", posFilter === p ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 hover:bg-slate-100")}
-                        onClick={() => setPosFilter(p as any)}>
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search names..."
-                     className="flex-1 px-3 py-2 rounded-xl border border-slate-300" />
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={hideDrafted} onChange={(e) => setHideDrafted(e.target.checked)} />
-                <span>Hide drafted</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <h2 className="font-semibold mb-3">Data</h2>
-            <details className="text-sm open:rounded-2xl open:ring-1 open:ring-slate-200">
-              <summary className="cursor-pointer select-none px-3 py-2 rounded-xl bg-slate-100">Paste custom player JSON or fetch live ADP</summary>
-              <div className="p-3 space-y-2">
-                <textarea id="jsonArea" className="w-full h-40 px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs" placeholder="[ { name, team, pos, bye, adp, ecr, projStd, projHalf, projPpr, risk }, ... ]"></textarea>
-                <div className="flex gap-2">
-                  <button className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100"
-                    onClick={() => {
-                      const el = document.getElementById("jsonArea") as HTMLTextAreaElement;
-                      if (el) replacePoolFromJSON(el.value);
-                    }}>Load JSON</button>
-                  <button className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100"
-                    onClick={() => {
-                      const el = document.getElementById("jsonArea") as HTMLTextAreaElement;
-                      if (el) el.value = JSON.stringify(SAMPLE_PLAYERS, null, 2);
-                    }}>Fill with sample</button>
-                  <button className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100" onClick={() => fetchADPFromFFC({ position: 'all', teamsCount: teams, year: 2025 })}>
-                    {loadingAdp ? 'Fetching ADP...' : 'Fetch Top ADP (Top 200)'}
-                  </button>
-                </div>
-                <div className="text-xs text-slate-500">Source: FantasyFootballCalculator public ADP JSON endpoint. If fetch fails (CORS/network), the app will fallback to the built-in sample players.</div>
-                {lastAdpSource && <div className="text-xs text-slate-500 truncate">Last ADP source: {lastAdpSource}</div>}
-              </div>
-            </details>
-          </div>
-        </section>
-
-        {/* Right: Recommendations & Team */}
-        <section className="lg:col-span-8 space-y-6">
-          {/* Your Team */}
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <div className="flex items-center gap-3">
-              <h2 className="font-semibold">Your Team</h2>
-              <div className="ml-auto flex items-center gap-2 text-sm">
-                <button className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100" onClick={undoLast}>Undo</button>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {myTeam.length === 0 && (
-                <div className="text-slate-500 text-sm">No picks yet. Draft a player from the list below.</div>
-              )}
-              {myTeam.map((p) => (
-                <div key={p.id} className="p-3 rounded-xl border border-slate-200">
-                  <div className="flex items-baseline justify-between">
-                    <div className="font-semibold">{p.name}</div>
-                    <div className={clsx("px-2 py-0.5 rounded-full text-xs", posColor(p.pos))}>{p.pos}</div>
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">{p.team} • Bye {p.bye}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 text-xs text-slate-500">
-              {POSITIONS.map((pos) => (
-                <span key={pos} className="mr-3">{pos}: {rosterCountByPos[pos]} / {starters[pos as keyof typeof starters] ?? 0}</span>
-              ))}
-              <span className="ml-3">FLEX remaining: {needs.FLEX}</span>
-            </div>
-          </div>
-
-          {/* Recommendations */}
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <div className="flex items-center gap-3">
-              <h2 className="font-semibold">Top Picks (On the Clock)</h2>
-              <div className="ml-auto text-sm text-slate-500">Based on VORP, needs, risk, stacks & bye guard</div>
-            </div>
-
-            {tiers.length === 0 && (
-              <div className="mt-3 text-sm text-slate-500">No players match your filters.</div>
-            )}
-
-            <div className="mt-3 space-y-6">
-              {tiers.map((group, i) => (
-                <div key={i}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Tier {i + 1}</div>
-                    <div className="h-px flex-1 bg-slate-200" />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {group
-                      .filter((p) => (hideDrafted ? !drafted.includes(p.id) : true))
-                      .map((p) => (
-                        <article key={p.id} className="p-3 rounded-xl border border-slate-200 hover:shadow transition">
-                          <div className="flex items-start gap-2">
-                            <div className={clsx("px-2 py-0.5 rounded-full text-xs", posColor(p.pos))}>{p.pos}</div>
-                            <div className="font-semibold leading-tight">{p.name}</div>
-                            <div className="ml-auto text-xs text-slate-500">{p.team}</div>
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">Bye {p.bye} • ADP {p.adp.toFixed(1)} • ECR {p.ecr?.toFixed ? p.ecr.toFixed(1) : p.ecr}</div>
-                          <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-                            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                              <div className="text-slate-500">Proj</div>
-                              <div className="font-semibold">{p.proj.toFixed(0)}</div>
-                            </div>
-                            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                              <div className="text-slate-500">VORP</div>
-                              <div className={clsx("font-semibold", p.vorp >= 0 ? "text-emerald-600" : "text-rose-600")}>{p.vorp.toFixed(1)}</div>
-                            </div>
-                            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                              <div className="text-slate-500">Reach</div>
-                              <div className={clsx("font-semibold", p.reach >= 0 ? "text-emerald-600" : "text-rose-600")}>{p.reach.toFixed(1)}</div>
-                            </div>
-                            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                              <div className="text-slate-500">Chance back</div>
-                              <div className="font-semibold">{formatPct(p.availNext)}</div>
-                            </div>
-                          </div>
-                          <div className="mt-3 flex items-center gap-2 text-sm">
-                            <button className="px-3 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" onClick={() => draftPlayer(p)}>Draft</button>
-                            <button className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-100" onClick={() => markDrafted(p)}>Mark Taken</button>
-                          </div>
-                        </article>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {showAdvanced && (
-              <div className="mt-6">
-                <div className="text-sm font-semibold mb-2">Sleeper Watch (ECR ≪ ADP)</div>
-                {sleepers.length === 0 ? (
-                  <div className="text-xs text-slate-500">No obvious sleepers under current filters.</div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {sleepers.map((p) => (
-                      <div key={p.id} className="p-3 rounded-xl border border-slate-200 bg-amber-50">
-                        <div className="font-medium">{p.name}</div>
-                        <div className="text-xs text-slate-600">{p.pos} • {p.team} • ADP {p.adp.toFixed(0)}</div>
-                        <div className="mt-1 text-xs">Chance back: <span className="font-semibold">{formatPct(p.availNext)}</span></div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Draft board helper */}
-          <div className="p-4 rounded-2xl border border-slate-200 shadow-sm bg-white">
-            <h2 className="font-semibold mb-3">Draft Board Helper</h2>
-            <div className="text-sm text-slate-600">Click a player to mark them taken by others quickly.</div>
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 text-sm">
-              {pool
-                .filter((p) => (hideDrafted ? !drafted.includes(p.id) : true))
-                .slice(0, 48)
-                .map((p) => (
-                  <button key={p.id}
-                    className={clsx(
-                      "text-left p-2 rounded-lg border hover:bg-slate-50",
-                      drafted.includes(p.id) ? "opacity-50" : "",
-                    )}
-                    onClick={() => markDrafted(p)}>
-                    <div className="font-medium truncate">{p.name}</div>
-                    <div className="text-xs text-slate-500">{p.pos} • {p.team} • ADP {p.adp.toFixed(1)}</div>
-                  </button>
-                ))}
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <footer className="py-10 text-center text-xs text-slate-500">
-        Built for live drafts. Paste your own projections to customize. Values are heuristic — use with judgment.
-      </footer>
-    </div>
-  );
-}
-
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
