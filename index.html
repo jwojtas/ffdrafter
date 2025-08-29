@@ -94,7 +94,7 @@ function App() {
     setLoading(true);
     setError("");
     try {
-     const res = await fetch("/.netlify/functions/adp");
+      const res = await fetch("/.netlify/functions/adp");
 if (!res.ok) throw new Error("Failed to fetch ADP");
 const data = await res.json();
 
@@ -183,7 +183,9 @@ setPlayers(mapped);
     setCurrentPickIndex(currentPickIndex + 1);
   };
 
-  const currentTeam = draftOrder[currentPickIndex]!=null?teams[draftOrder[currentPickIndex]]:null;
+  const currentTeamIndex = draftOrder[currentPickIndex];
+  const currentTeam = currentTeamIndex!=null?teams[currentTeamIndex]:null;
+  const round = Math.floor(currentPickIndex / numTeams) + 1;
   const teamNeeds = currentTeam ? {
     QB: Math.max(0, startersRequired.QB-currentTeam.roster.QB.length),
     RB: Math.max(0, startersRequired.RB-currentTeam.roster.RB.length),
@@ -195,6 +197,16 @@ setPlayers(mapped);
   } : {};
   const suggestedPick = currentTeam ? suggestPick(players, teamNeeds) : null;
   const draftComplete = currentPickIndex >= draftOrder.length;
+
+  // Auto-pick for CPU teams
+  React.useEffect(() => {
+    if (!draftStarted || draftComplete) return;
+    if (currentTeamIndex == null) return;
+    if (currentTeamIndex !== userPickPosition && !manualAllTeams) {
+      const timer = setTimeout(() => makePick(), 1000); // 1 second delay
+      return () => clearTimeout(timer);
+    }
+  }, [currentPickIndex, draftStarted]);
 
   const gradeTeam = (team) => {
     if(!team || !team.roster) return 0;
@@ -240,12 +252,14 @@ setPlayers(mapped);
 
       {draftStarted && !draftComplete && currentTeam && (
         <div className="mb-6">
-          <h2 className="text-xl font-semibold">Current Pick: {currentTeam.name}</h2>
+          <h2 className="text-xl font-semibold">
+            Round {round}/16 – Current Pick: {currentTeam.name}
+          </h2>
           <p className="mb-2">
             Suggested Pick: {suggestedPick ? `${suggestedPick.name} (${suggestedPick.pos || "Unknown"})` : "No pick available"}
           </p>
 
-          {(draftOrder[currentPickIndex] === userPickPosition || manualAllTeams) ? (
+          {(currentTeamIndex === userPickPosition || manualAllTeams) ? (
             <div>
               <button 
                 onClick={() => makePick()} 
@@ -256,14 +270,7 @@ setPlayers(mapped);
               <ManualPick players={players} onPick={(player) => makePick(player)} />
             </div>
           ) : (
-            <div>
-              <button 
-                onClick={() => makePick()} 
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-              >
-                Auto Pick Suggested
-              </button>
-            </div>
+            <p className="text-gray-600">Auto-picking in progress...</p>
           )}
         </div>
       )}
