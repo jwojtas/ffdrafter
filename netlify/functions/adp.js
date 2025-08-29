@@ -37,20 +37,7 @@ export async function handler(event, context) {
       });
     }
 
-    // ✅ Ensure we always have at least some Kickers & DSTs
-    const ensureSpecials = (pos) => {
-      if (!players.some((p) => (p.position || p.pos).toUpperCase().includes(pos))) {
-        players.push({
-          player_name: `Replacement ${pos}`,
-          position: pos,
-          adp: 999,
-        });
-      }
-    };
-    ensureSpecials("K");
-    ensureSpecials("DEF");
-
-    return {
+      return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ players }),
