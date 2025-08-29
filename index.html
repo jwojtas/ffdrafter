@@ -190,11 +190,25 @@ function App(){
         </div>
       )}
 
-      {draftStarted&&(
-        <div className="bg-gray-50 p-4 rounded-xl mt-4">
-          <h2 className="font-semibold mb-2">Draft History</h2>
-          <ol className="list-decimal list-inside max-h-64 overflow-auto">
-            {draftOrder.slice(0,currentPickIndex).map((tIndex,idx)=>{
-              const t=teams[tIndex];
-              const pick=Object.values(t?.roster||{}).flat().slice(-1)[0];
-              const isFLEX=Object.entries(t?.roster
+      {draftStarted && (
+  <div className="bg-gray-50 p-4 rounded-xl mt-4">
+    <h2 className="font-semibold mb-2">Draft History</h2>
+    <ol className="list-decimal list-inside max-h-64 overflow-auto">
+      {draftOrder.slice(0, currentPickIndex).map((tIndex, idx) => {
+        const t = teams[tIndex];
+        const pick = Object.values(t?.roster || {}).flat().slice(-1)[0];
+        const isFLEX = Object.entries(t?.roster || {}).some(([pos, arr]) =>
+          arr.includes(pick) && pos === 'FLEX'
+        );
+        return (
+          <li
+            key={idx}
+            className={`${tIndex === userPickPosition ? 'font-bold text-blue-600' : ''} ${isFLEX ? 'text-green-600 font-semibold' : ''}`}
+          >
+            {t?.name || `Team ${tIndex + 1}`}: {pick ? `${pick.name} (${pick.pos})` : 'No pick'}
+          </li>
+        );
+      })}
+    </ol>
+  </div>
+)}
