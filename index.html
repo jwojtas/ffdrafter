@@ -68,15 +68,19 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      // Example: use mock data if serverless function not set up
-      const data = { players: [] };
-      for(let i=1;i<=200;i++){
-        const posArray = ["QB","RB","WR","TE","DST","K"];
-        const pos = posArray[Math.floor(Math.random()*posArray.length)];
-        data.players.push({name:`Player ${i}`,pos,pos,posName:`${pos}`,adp:i});
-      }
-      const mapped = data.players.map(p => ({...p,drafted:false}));
-      setPlayers(mapped);
+      const res = await fetch("/.netlify/functions/adp");
+if (!res.ok) throw new Error("Failed to fetch ADP");
+const data = await res.json();
+
+// fantasyfootballcalculator API returns `players` array
+const mapped = data.players.map(p => ({
+  name: p.player_name || p.name,
+  pos: p.position || p.pos,
+  adp: p.adp,
+  drafted: false
+}));
+setPlayers(mapped);
+
     } catch (e) {
       console.error(e);
       setError("Could not fetch ADP data.");
