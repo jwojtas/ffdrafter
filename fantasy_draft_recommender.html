@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fantasy Draft Recommender</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+
+    const samplePlayers = [
+      { name: "Justin Jefferson", pos: "WR", team: "MIN", adp: 1.02 },
+      { name: "Christian McCaffrey", pos: "RB", team: "SF", adp: 1.05 },
+      { name: "Josh Allen", pos: "QB", team: "BUF", adp: 25.3 },
+      { name: "49ers D/ST", pos: "DST", team: "SF", adp: 150.0 }
+    ];
+
+    function App() {
+      const [players, setPlayers] = React.useState(samplePlayers);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState("");
+
+      const fetchADP = async () => {
+        setLoading(true);
+        setError("");
+        try {
+          const url = "https://fantasyfootballcalculator.com/api/v1/adp/standard?position=all&teams=12&year=2025";
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("Fetch failed");
+          const data = await res.json();
+          const mapped = data.players
+            .slice(0,200)
+            .map(p => ({
+              name: p.name,
+              pos: p.position,
+              team: p.team,
+              adp: p.adp
+            }));
+          setPlayers(mapped);
+        } catch (e) {
+          console.error(e);
+          setError("Could not fetch ADP (CORS or network error). Using sample data.");
+          setPlayers(samplePlayers);
+        }
+        setLoading(false);
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto p-6">
+          <h1 className="text-2xl font-bold mb-4">Fantasy Draft Recommender</h1>
+          <button 
+            onClick={fetchADP}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700">
+            {loading ? "Fetching..." : "Fetch Top 200 ADP"}
+          </button>
+          {error && <p className="text-red-500 mt-2">{error}</p>}
+          <ul className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {players.map((p,i) => (
+              <li key={i} className="p-4 bg-white rounded-xl shadow flex justify-between">
+                <span>{p.name} ({p.pos} - {p.team})</span>
+                <span className="text-gray-600">ADP: {p.adp}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
